@@ -1,0 +1,59 @@
+---
+- name: Ensure SSH configuration directory exists
+  file:
+    path: /etc/ssh
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Configure SSH security settings
+  template:
+    src: templates/ssh/sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    mode: '0600'
+    owner: root
+    group: root
+  notify: restart sshd
+
+- name: Disable root login
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin no'
+  notify: restart sshd
+
+- name: Disable password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+  notify: restart sshd
+
+- name: Enable strict mode
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?StrictModes'
+    line: 'StrictModes yes'
+  notify: restart sshd
+
+- name: Limit max authentication attempts
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?MaxAuthTries'
+    line: 'MaxAuthTries 3'
+  notify: restart sshd
+
+- name: Disable empty passwords
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitEmptyPasswords'
+    line: 'PermitEmptyPasswords no'
+  notify: restart sshd
+
+- name: Set SSH protocol version
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?Protocol'
+    line: 'Protocol 2'
+  notify: restart sshd

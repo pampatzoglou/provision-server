@@ -1,0 +1,180 @@
+---
+# Comprehensive Polkadot Health Checks
+
+- name: Prepare Health Check Results
+  set_fact:
+    health_check_results: []
+
+# Process Checks
+- block:
+    - name: Process Health Checks
+      shell: "{{ item.command }}"
+      loop: "{{ health_checks.process_checks }}"
+      register: process_check_results
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Process Check Evaluation
+      set_fact:
+        health_check_results: >
+          {{ health_check_results + [
+            {
+              'name': item.item.name,
+              'status': item.rc == item.item.expected_status,
+              'severity': item.item.severity
+            }
+          ] }}
+      loop: "{{ process_check_results.results }}"
+      when: item is defined
+  when: health_checks.process_checks is defined
+
+# Port Checks
+- block:
+    - name: Port Availability Checks
+      wait_for:
+        host: localhost
+        port: "{{ item.port }}"
+        timeout: 10
+        state: started
+      loop: "{{ health_checks.port_checks }}"
+      register: port_check_results
+      ignore_errors: yes
+
+    - name: Port Check Evaluation
+      set_fact:
+        health_check_results: >
+          {{ health_check_results + [
+            {
+              'name': item.item.name,
+              'status': item.status is defined and item.status == true,
+              'severity': item.item.severity
+            }
+          ] }}
+      loop: "{{ port_check_results.results }}"
+      when: item is defined
+  when: health_checks.port_checks is defined
+
+# RPC Checks
+- block:
+    - name: RPC System Health Check
+      uri:
+        url: "{{ item.endpoint }}"
+        method: POST
+        body_format: json
+        body: 
+          jsonrpc: "2.0"
+          method: "{{ item.method }}"
+          params: []
+          id: 1
+        timeout: 30
+      loop: "{{ health_checks.rpc_checks }}"
+      register: rpc_check_results
+      ignore_errors: yes
+
+    - name: RPC Check Evaluation
+      set_fact:
+        health_check_results: >
+          {{ health_check_results + [
+            {
+              'name': item.item.name,
+              'status': (
+                item.json is defined and 
+                (item.item.expected_response.is_syncing is not defined or 
+                 item.json.result.is_syncing == item.item.expected_response.is_syncing) and
+                (item.item.expected_response.should_have_peers is not defined or 
+                 item.json.result.peers > 0) and
+                (item.item.expected_response.not_null is not defined or 
+                 item.json.result is not none)
+              ),
+              'severity': item.item.severity
+            }
+          ] }}
+      loop: "{{ rpc_check_results.results }}"
+      when: item is defined
+  when: health_checks.rpc_checks is defined
+
+# Aggregate Health Check Results
+- block:
+    - name: Evaluate Overall Health
+      set_fact:
+        critical_failures: "{{ health_check_results | selectattr('severity', 'equalto', 'critical') | selectattr('status', 'equalto', false) | list }}"
+        high_failures: "{{ health_check_results | selectattr('severity', 'equalto', 'high') | selectattr('status', 'equalto', false) | list }}"
+
+    - name: Determine Health Status
+      set_fact:
+        overall_health_status: >
+          {% if critical_failures | length > 0 %}
+            'CRITICAL'
+          {% elif high_failures | length > 0 %}
+            'WARNING'
+          {% else %}
+            'HEALTHY'
+          {% endif %}
+
+    - name: Log Health Check Results
+      copy:
+        content: |
+          Health Check Results
+          -------------------
+          Overall Status: {{ overall_health_status }}
+          
+          Critical Failures:
+          {% for failure in critical_failures %}
+          - {{ failure.name }}
+          {% endfor %}
+          
+          High Severity Failures:
+          {% for failure in high_failures %}
+          - {{ failure.name }}
+          {% endfor %}
+        dest: "{{ data_dir }}/health_check_results.log"
+
+    - name: Send Notifications
+      block:
+        - name: Send Email Notification
+          mail:
+            subject: "Polkadot Validator Health Check: {{ overall_health_status }}"
+            body: |
+              Health Check Results
+              -------------------
+              Overall Status: {{ overall_health_status }}
+              
+              Critical Failures:
+              {% for failure in critical_failures %}
+              - {{ failure.name }}
+              {% endfor %}
+              
+              High Severity Failures:
+              {% for failure in high_failures %}
+              - {{ failure.name }}
+              {% endfor %}
+            to: "{{ health_checks.notifications.channels | selectattr('type', 'equalto', 'email') | map(attribute='recipients') | first | first }}"
+          when: 
+            - health_checks.notifications.enabled
+            - health_checks.notifications.channels | selectattr('type', 'equalto', 'email') | list | length > 0
+            - overall_health_status != 'HEALTHY'
+
+        - name: Send Slack Notification
+          uri:
+            url: "{{ health_checks.notifications.channels | selectattr('type', 'equalto', 'slack') | map(attribute='webhook_url') | first }}"
+            method: POST
+            body_format: json
+            body:
+              text: |
+                *Polkadot Validator Health Check: {{ overall_health_status }}*
+                
+                Critical Failures:
+                {% for failure in critical_failures %}
+                • {{ failure.name }}
+                {% endfor %}
+                
+                High Severity Failures:
+                {% for failure in high_failures %}
+                • {{ failure.name }}
+                {% endfor %}
+          when: 
+            - health_checks.notifications.enabled
+            - health_checks.notifications.channels | selectattr('type', 'equalto', 'slack') | list | length > 0
+            - overall_health_status != 'HEALTHY'
+      when: health_checks.notifications.enabled
+  when: health_checks.enabled

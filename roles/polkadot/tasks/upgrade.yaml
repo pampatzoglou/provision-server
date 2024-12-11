@@ -1,0 +1,131 @@
+---
+# Upgrade phase tasks for Polkadot
+
+- name: Prepare for Upgrade
+  block:
+    - name: Create upgrade preparation directory
+      file:
+        path: "{{ binary_base_dir }}/upgrades"
+        state: directory
+        mode: '0755'
+
+    - name: Backup current binary version
+      copy:
+        src: "{{ binary_base_dir }}/{{ polkadot_version }}"
+        dest: "{{ binary_base_dir }}/upgrades/{{ polkadot_version }}_{{ ansible_date_time.iso8601_basic_short }}"
+        remote_src: yes
+
+- name: Stop Polkadot Service
+  service:
+    name: polkadot
+    state: stopped
+
+- name: Download New Binary
+  block:
+    - name: Download Polkadot Binary
+      get_url:
+        url: "{{ polkadot_base_url }}/{{ polkadot_version }}/polkadot"
+        dest: "{{ download_temp_dir }}/polkadot"
+        mode: '0755'
+        checksum: "{{ binary_checksum | default(omit) }}"
+      register: binary_download
+
+    - name: Verify Binary Signature
+      command: gpg --verify "{{ download_temp_dir }}/polkadot.asc"
+      when: verify_binary_hash
+      ignore_errors: yes
+      register: signature_check
+
+- name: Upgrade Binaries
+  block:
+    - name: Install New Binaries
+      copy:
+        src: "{{ download_temp_dir }}/polkadot"
+        dest: "{{ binary_base_dir }}/{{ polkadot_version }}/polkadot"
+        remote_src: yes
+        mode: '0755'
+      register: binary_install
+
+    - name: Create Symlinks
+      file:
+        src: "{{ binary_base_dir }}/{{ polkadot_version }}/{{ item.name }}"
+        dest: "{{ item.link }}"
+        state: link
+        force: yes
+      loop: "{{ polkadot_binaries }}"
+
+- name: Validate Upgrade
+  block:
+    - name: Start Polkadot Service
+      service:
+        name: polkadot
+        state: started
+
+    - name: Wait for Service Startup
+      wait_for:
+        port: 9933
+        timeout: 300
+
+    - name: Run Health Checks
+      include_tasks: health_check.yaml
+      register: upgrade_health_check
+
+- name: Rollback Mechanism
+  block:
+    - name: Determine Rollback Necessity
+      set_fact:
+        needs_rollback: >
+          {{ 
+            (upgrade_health_check.overall_health_status is defined and 
+             upgrade_health_check.overall_health_status != 'HEALTHY') or 
+            (upgrade_health_check is failed)
+          }}
+
+    - name: Rollback to Previous Version
+      block:
+        - name: Stop Current Service
+          service:
+            name: polkadot
+            state: stopped
+
+        - name: Find Last Working Version
+          find:
+            paths: "{{ binary_base_dir }}/upgrades"
+            patterns: "{{ polkadot_version }}_*"
+            file_type: directory
+          register: backup_versions
+
+        - name: Restore Previous Binary
+          copy:
+            src: "{{ backup_versions.files[0].path }}/polkadot"
+            dest: "{{ binary_base_dir }}/{{ polkadot_version }}/polkadot"
+            remote_src: yes
+            mode: '0755'
+          when: backup_versions.files | length > 0
+
+        - name: Start Polkadot Service with Previous Version
+          service:
+            name: polkadot
+            state: started
+
+        - name: Send Rollback Notification
+          include_tasks: notify_rollback.yaml
+      when: needs_rollback and upgrade.rollback.enabled
+
+    - name: Cleanup Old Versions
+      block:
+        - name: Remove Excess Backup Versions
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop: >
+            {{ 
+              (backup_versions.files | 
+               sort(attribute='ctime') | 
+               list)[:-upgrade.rollback.keep_versions]
+            }}
+          when: 
+            - backup_versions.files is defined
+            - backup_versions.files | length > upgrade.rollback.keep_versions
+      when: not needs_rollback
+  when: upgrade.rollback.enabled

@@ -1,0 +1,59 @@
+---
+# Sync phase tasks for Polkadot
+- name: Stop Polkadot service
+  service:
+    name: polkadot
+    state: stopped
+
+- name: Move existing database
+  command: mv {{ data_dir }} {{ data_dir }}_backup_{{ ansible_date_time.date }}
+  args:
+    creates: {{ data_dir }}_backup_{{ ansible_date_time.date }}
+
+- name: Download and uncompress snapshot
+  block:
+    - name: Download snapshot
+      get_url:
+        url: "{{ item }}"
+        dest: "/tmp/{{ item | basename }}"
+      loop: "{{ lifecycle.sync.snapshots.kusama if inventory_hostname in groups['kusama'] else lifecycle.sync.snapshots.polkadot }}"
+      when: lifecycle.sync.snapshots.enabled
+
+    - name: Uncompress snapshot
+      command: lz4 -d /tmp/{{ item | basename }} | tar x -C {{ data_dir }}
+      loop: "{{ lifecycle.sync.snapshots.kusama if inventory_hostname in groups['kusama'] else lifecycle.sync.snapshots.polkadot }}"
+      when: lifecycle.sync.snapshots.enabled
+
+- name: Validate Sync Type
+  block:
+    - name: Check Allowed Sync Types
+      assert:
+        that:
+          - lifecycle.sync.type is defined
+          - lifecycle.sync.type in ['warp', 'fast', 'full']
+        fail_msg: "Invalid sync type. Allowed types are 'warp', 'fast', or 'full'."
+        quiet: false
+
+- name: Perform Sync
+  block:
+    - name: Execute Polkadot Sync
+      command: "polkadot --{{ lifecycle.sync.type }}"
+      register: sync_result
+      failed_when: sync_result.rc != 0
+      tags: ['lifecycle', 'sync']
+
+    - name: Log Sync Details
+      copy:
+        content: |
+          Sync Type: {{ lifecycle.sync.type }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Result: {{ sync_result.stdout }}
+        dest: "{{ log_dir }}/polkadot_sync_{{ ansible_date_time.iso8601_basic_short }}.log"
+      when: sync_result.stdout is defined
+
+  when: lifecycle.sync.enabled | default(false) | bool
+
+- name: Start Polkadot service
+  service:
+    name: polkadot
+    state: started

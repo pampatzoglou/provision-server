@@ -1,0 +1,23 @@
+[Unit]
+Description=Smartctl Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User={{ smartctl.user }}
+Group={{ smartctl.group }}
+ExecStart={{ smartctl.install_dir }}/smartctl_exporter {% for option in smartctl.options | default([]) %}{{ option }} {% endfor %}
+
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
+
+[Install]
+WantedBy=multi-user.target

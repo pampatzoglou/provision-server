@@ -1,0 +1,43 @@
+#include <tunables/global>
+
+profile polkadot-execute-worker flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+
+  # Binary
+  {{ binary_base_dir }}/{{ polkadot_version }}/polkadot-execute-worker mr,
+  /usr/local/bin/polkadot-execute-worker mr,
+
+  # Configuration and data
+  /etc/polkadot/** r,
+  /var/lib/polkadot/** rwk,
+
+  # Allow network access for worker communication
+  network tcp,
+  network unix,
+
+  # System capabilities
+  capability sys_resource,
+  capability dac_read_search,
+
+  # Log files
+  /var/log/polkadot/** rw,
+
+  # Temp directory access
+  /tmp/** rw,
+
+  # Allow access to entropy sources
+  /dev/random r,
+  /dev/urandom r,
+
+  # Allow memory locking
+  capability ipc_lock,
+
+  # Allow reading CPU info
+  /proc/cpuinfo r,
+  /sys/devices/system/cpu/** r,
+
+  # Allow shared memory access
+  capability ipc_owner,
+  /dev/shm/** rw,
+}

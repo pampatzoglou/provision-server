@@ -1,0 +1,119 @@
+---
+- name: Setup Prometheus User and Directories
+  block:
+    - name: Ensure Prometheus user and group exist
+      ansible.builtin.group:
+        name: "{{ prometheus.group }}"
+        state: present
+
+    - name: Create Prometheus user
+      ansible.builtin.user:
+        name: "{{ alertmanager.user }}"
+        group: "{{ alertmanager.group }}"
+        system: true
+        shell: /sbin/nologin
+        create_home: false
+        state: present
+
+- name: Install dependencies
+  ansible.builtin.package:
+    name:
+      - wget
+      - tar
+      - gzip
+    state: present
+
+- name: Install Prometheus Binary
+  block:
+    - name: Download Prometheus
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus.version }}/prometheus-{{ prometheus.version }}.linux-amd64.tar.gz"
+        dest: "/tmp"
+
+
+    - name: Download SHA256SUMS
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus.version }}/SHA256SUMS"
+        dest: "/tmp/prometheus-SHA256SUMS"
+        mode: '0644'
+
+    - name: Verify Prometheus binary checksum
+      ansible.builtin.shell: |
+        cd /tmp
+        sha256sum --check --ignore-missing prometheus-SHA256SUMS
+      changed_when: false
+
+    - name: Extract Prometheus
+      ansible.builtin.unarchive:
+        src: "/tmp/prometheus-{{ prometheus.version }}.linux-amd64.tar.gz"
+        dest: "/tmp"
+        remote_src: true
+
+    - name: Install Prometheus binaries
+      ansible.builtin.copy:
+        src: "/tmp/prometheus-{{ prometheus.version }}.linux-amd64/prometheus"
+        dest: "/usr/local/bin/prometheus"
+        mode: '0755'
+      register: prometheus_binary
+
+    - name: Install Prometheus configuration and data directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ prometheus.user }}"
+        group: "{{ prometheus.group }}"
+        mode: '0755'
+      loop:
+        - "{{ prometheus.data_dir }}"
+        - "{{ prometheus.config_dir }}"
+        - "{{ prometheus.config_dir }}/rules.d"
+
+- name: Configure Prometheus Service
+  block:
+    - name: Template Prometheus config file
+      template:
+        src: templates/prometheus/prometheus.yaml.j2
+        dest: "{{ prometheus.config_dir }}/prometheus.yaml"
+        mode: '0644'
+        owner: "{{ prometheus.user }}"
+        group: "{{ prometheus.group }}"
+      register: prometheus_config
+
+    - name: Template Prometheus systemd service
+      template:
+        src: templates/prometheus/prometheus.service.j2
+        dest: /etc/systemd/system/prometheus.service
+        mode: '0644'
+      register: prometheus_service
+
+    - name: Restart Prometheus service
+      ansible.builtin.systemd:
+        name: prometheus
+        state: restarted
+        enabled: true
+        daemon_reload: yes
+      when: 
+        - ansible_connection != 'docker'
+        - prometheus_config.changed or prometheus_service.changed or prometheus_binary.changed
+
+- name: Install Prometheus rules
+  copy:
+    src: "templates/prometheus/rules/{{ item }}"
+    dest: "{{ prometheus.config_dir }}/rules.d/{{ item | basename }}"
+    mode: '0644'
+    owner: "{{ prometheus.user }}"
+    group: "{{ prometheus.group }}"
+  loop:
+    - "heartbeat.yaml"
+    - "prometheus-self-monitoring.rules.yaml"
+  notify: reload prometheus
+
+- name: Wait for Prometheus web UI to become available
+  uri:
+    url: "http://localhost:9090/graph"
+    method: GET
+    status_code: 200
+  register: prometheus_result
+  until: prometheus_result.status == 200
+  retries: 12
+  delay: 5

@@ -1,0 +1,126 @@
+---
+prometheus:
+  version: "2.47.0"    # Update to the desired Prometheus version
+  user: "prometheus"
+  group: "prometheus"
+  install_dir: "/opt/prometheus"
+  data_dir: "/var/lib/prometheus"
+  config_dir: "/etc/prometheus"
+  rules:
+    enabled: true
+    default_rules:
+      - heartbeat
+      - host-and-hardware
+      - prometheus-self-monitoring
+      - smartctl-exporter
+    custom_rules: []  # Add your custom rule files here
+    evaluation_interval: 15s
+
+alertmanager:
+  enabled: true
+  version: "0.26.0" # Update to the desired Alertmanager version
+  user: "alertmanager"
+  group: "alertmanager"
+  data_dir: "/var/lib/alertmanager"
+  config_dir: "/etc/alertmanager"
+
+# Smartctl Exporter Configuration
+smartctl:
+  enabled: true  # Optional installation
+  version: "1.8.2"
+  user: "root"
+  group: "root"
+  install_dir: "/usr/local/bin"
+  config_dir: "/etc/smartctl-exporter"
+  data_dir: "/var/lib/smartctl-exporter"
+
+# Node Exporter Configuration
+node_exporter:
+  enabled: true  # Optional installation
+  version: "1.8.2"
+  user: "node-exporter"
+  group: "node-exporter"
+  install_dir: "/usr/local/bin"
+  port: 9100
+  apparmor:
+    enabled: "{{ apparmor.enabled and apparmor.profiles.node_exporter.enabled }}"
+    enforce: "{{ apparmor.profiles.node_exporter.enforce }}"
+
+# defaults file for admin
+# Grafana Agent Configuration
+grafana_agent:
+  enabled: true
+  version: "0.43.4"
+  install_dir: "/usr/local/bin"
+  config_dir: "/etc/grafana-agent"
+  data_dir: "/var/lib/grafana-agent"
+  user: "grafana-agent"
+  group: "grafana-agent"
+  port: 12345
+  prometheus:
+    url: "http://prometheus:9090/api/v1/write"
+  loki:
+    url: "http://loki:3100/loki/api/v1/push"
+  extra_scrape_configs:
+    - job_name: "polkadot"
+      static_configs:
+        - targets: ["localhost:9615"]
+      metrics_path: "/metrics"
+      scrape_interval: "15s"
+  apparmor:
+    enabled: "{{ apparmor.enabled and apparmor.profiles.grafana_agent.enabled }}"
+    enforce: "{{ apparmor.profiles.grafana_agent.enforce }}"
+
+# Promtail Configuration
+# Depricated
+promtail:
+  enabled: false  # Optional installation
+  version: "3.2.1"
+  user: "promtail"
+  group: "promtail"
+  port: 9080
+  install_dir: "/usr/local/bin"
+  config_dir: "/etc/promtail"
+  data_dir: "/var/lib/promtail"
+  positions_dir: "/var/lib/promtail/positions"
+  loki_url: "http://localhost:3100/loki/api/v1/push"
+  scrape_configs:
+    - job_name: polkadot
+      static_configs:
+        - targets:
+            - localhost
+          labels:
+            job: polkadot
+            host: "{{ inventory_hostname }}"
+            __path__: /var/log/polkadot/*.log
+    - job_name: system
+      static_configs:
+        - targets:
+            - localhost
+          labels:
+            job: system
+            host: "{{ inventory_hostname }}"
+            __path__: 
+              - /var/log/syslog
+              - /var/log/auth.log
+  apparmor:
+    enabled: "{{ apparmor.enabled and apparmor.profiles.promtail.enabled }}"
+    enforce: "{{ apparmor.profiles.promtail.enforce }}"
+
+
+# AppArmor Configuration
+apparmor:
+  enabled: false
+  profiles:
+    grafana_agent:
+      enabled: true
+      enforce: true
+    node_exporter:
+      enabled: true
+      enforce: true
+    promtail:
+      enabled: true
+      enforce: true
+    smartctl_exporter:
+      enabled: true
+      enforce: true

@@ -1,0 +1,60 @@
+---
+- name: Secure Shared Memory Mount
+  mount:
+    path: /dev/shm
+    src: tmpfs
+    fstype: tmpfs
+    opts: "{{ hardening.shared_memory.mount_options | join(',') }}"
+    state: mounted
+  when: hardening.shared_memory.enabled | default(false) | bool
+  become: true
+  tags: ['hardening', 'shared_memory']
+
+- name: Install Fail2ban
+  apt:
+    name: fail2ban
+    state: present
+  when: hardening.fail2ban.enabled | default(false) | bool
+  become: true
+  tags: ['hardening', 'fail2ban']
+
+- name: Configure Fail2ban
+  template:
+    src: fail2ban/fail2ban_jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: '0644'
+  when: hardening.fail2ban.enabled | default(false) | bool
+  become: true
+  notify: restart fail2ban
+  tags: ['hardening', 'fail2ban']
+
+- name: Ensure Fail2ban service is started and enabled
+  systemd:
+    name: fail2ban
+    state: started
+    enabled: yes
+  when: hardening.fail2ban.enabled | default(false) | bool and not ansible_connection == 'docker'
+  become: true
+  tags: ['hardening', 'fail2ban']
+
+- name: Install AppArmor and utilities
+  apt:
+    name: 
+      - apparmor
+      - apparmor-utils
+      - apparmor-profiles
+    state: present
+  when: apparmor.enabled | default(false) | bool
+  become: true
+  tags: ['hardening', 'apparmor']
+
+- name: Manage AppArmor service
+  systemd:
+    name: apparmor
+    enabled: "{{ apparmor.active | default(false) | bool }}"
+    state: "{{ 'started' if apparmor.active | default(false) | bool else 'stopped' }}"
+  when: apparmor.enabled | default(false) | bool
+  become: true
+  tags: ['hardening', 'apparmor']

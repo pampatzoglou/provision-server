@@ -1,0 +1,45 @@
+#include <tunables/global>
+
+profile fail2ban flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/python>
+
+  # Binary
+  /usr/bin/fail2ban-server mr,
+  /usr/bin/fail2ban-client mr,
+
+  # Configuration
+  /etc/fail2ban/** r,
+
+  # Log files - both reading logs and writing own logs
+  /var/log/fail2ban.log* rw,
+  /var/log/auth.log r,
+  /var/log/syslog r,
+  /var/log/** r,
+
+  # Database
+  /var/lib/fail2ban/** rwk,
+
+  # PID file
+  /run/fail2ban/fail2ban.pid rw,
+  /run/fail2ban/fail2ban.sock rw,
+
+  # System capabilities
+  capability dac_read_search,
+  capability net_admin,
+  capability net_raw,
+
+  # Allow iptables/nftables manipulation
+  /sbin/iptables ix,
+  /sbin/ip6tables ix,
+  /usr/sbin/nft ix,
+
+  # Allow reading journal
+  /run/systemd/journal/socket rw,
+  /run/log/journal/** r,
+
+  # Python requirements
+  /usr/bin/python3 ix,
+  /usr/lib/python3/** mr,
+}

@@ -1,0 +1,27 @@
+---
+all:
+  children:
+    bare_metal:
+      children:
+        validators:
+          hosts:
+            validator1:
+              ansible_host: 192.168.1.101
+              ansible_user: admin
+              ansible_port: 22
+              rack: rack1
+              datacenter: dc1
+            validator2:
+              ansible_host: 192.168.1.102
+              ansible_user: admin
+              ansible_port: 22
+              rack: rack1
+              datacenter: dc1
+        storage:
+          hosts:
+            storage1:
+              ansible_host: 192.168.1.201
+              ansible_user: admin
+              ansible_port: 22
+              rack: rack2
+              datacenter: dc1

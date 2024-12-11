@@ -1,0 +1,140 @@
+---
+- name: Install Teleport (Debian/Ubuntu)
+  block:
+    - name: Add Teleport GPG key
+      get_url:
+        url: https://deb.releases.teleport.dev/teleport-pubkey.asc
+        dest: /usr/share/keyrings/teleport-archive-keyring.asc
+        mode: '0644'
+      register: gpg_key
+      until: gpg_key is success
+      retries: 3
+      delay: 5
+
+    - name: Add Teleport repository
+      copy:
+        content: "deb [signed-by=/usr/share/keyrings/teleport-archive-keyring.asc] https://deb.releases.teleport.dev/ stable main"
+        dest: /etc/apt/sources.list.d/teleport.list
+        mode: '0644'
+
+    - name: Update apt cache (Debian)
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: always
+      register: apt_update
+      until: apt_update is success
+      retries: 3
+      delay: 5
+
+    - name: Install Teleport package
+      apt:
+        name: teleport
+        state: present
+      register: teleport_install
+      until: teleport_install is success
+      retries: 3
+      delay: 5
+  when: ansible_os_family == "Debian"
+  become: true
+
+- name: Install Teleport (RedHat/CentOS)
+  block:
+    - name: Add Teleport repository
+      yum_repository:
+        name: teleport
+        description: Teleport Repository
+        baseurl: https://rpm.releases.teleport.dev/
+        gpgcheck: no
+        enabled: yes
+
+    - name: Install Teleport package
+      package:
+        name: teleport
+        state: present
+      register: teleport_install
+      until: teleport_install is success
+      retries: 3
+      delay: 5
+  when: ansible_os_family == "RedHat"
+  become: true
+
+- name: Configure Teleport
+  block:
+
+    - name: Create Teleport directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: teleport
+        group: teleport
+        mode: '0750'
+      loop:
+        - "{{ teleport.config_dir }}"
+        - "{{ teleport.data_dir }}"
+        - "{{ teleport.data_dir }}/proc"
+      become: true
+
+    - name: Template Teleport configuration
+      template:
+        src: teleport/teleport.yaml.j2
+        dest: "{{ teleport.config_dir }}/teleport.yaml"
+        owner: teleport
+        group: teleport
+        mode: '0640'
+      register: teleport_config_status
+
+    - name: Template Teleport service file
+      template:
+        src: teleport/teleport.service.j2
+        dest: /etc/systemd/system/teleport.service
+        mode: '0644'
+      register: teleport_service_status
+
+    - name: Stop Teleport service if running
+      systemd:
+        name: teleport
+        state: stopped
+      when: teleport_config_status.changed or teleport_service_status.changed
+      ignore_errors: yes
+
+    - name: Enable and start Teleport service
+      systemd:
+        name: teleport
+        state: started
+        enabled: yes
+        daemon_reload: yes
+  become: true
+
+- name: Wait for Teleport web UI to become available
+  uri:
+    url: "https://localhost:3080/web/login"
+    validate_certs: no
+    method: GET
+    status_code: 200
+  register: result
+  until: result.status == 200
+  retries: 12
+  delay: 5
+  become: false
+
+- name: Print Teleport setup instructions
+  debug:
+    msg: |
+      Teleport has been installed and configured successfully!
+      
+      Next steps:
+      1. Create your first admin user:
+         sudo tctl users add teleport-admin --roles=editor,access --logins=root,ubuntu,admin
+      
+      2. Access the Web UI:
+         Open https://{{ ansible_host }}:3080 in your browser
+         (or https://localhost:3080 if running locally)
+      
+      3. Follow the signup URL from step 1 to complete user setup
+         
+      Note: You may need to:
+      - Accept the self-signed certificate in your browser
+      - Configure your Teleport gateway if using one
+      - Add more users as needed using 'tctl users add'
+  when: result.status == 200

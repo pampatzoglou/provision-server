@@ -1,0 +1,25 @@
+---
+- name: Include monitoring tasks
+  block:
+    - name: Include Node exporter
+      include_tasks: node_exporter.yaml
+      when: node_exporter is defined and node_exporter.enabled | default(false) | bool
+      tags: ['node-exporter', 'setup', 'restart']
+
+    - name: Include Grafana Agent
+      include_tasks: grafana_agent.yaml
+      when: grafana_agent is defined and grafana_agent.enabled | default(false) | bool
+      tags: ['grafana-agent', 'setup', 'restart']
+
+    - name: Include Smartctl Exporter
+      include_tasks: smartctl-exporter.yaml
+      when: smartctl_exporter is defined and smartctl_exporter.enabled | default(false) | bool
+      tags: ['smartctl-exporter', 'setup', 'restart']
+
+    - name: Include prometheus
+      include_tasks: prometheus.yaml
+      tags: ['prometheus', 'setup', 'restart']
+
+    - name: Include alertmanager
+      include_tasks: alertmanager.yaml
+      tags: ['alertmanager', 'setup', 'restart']

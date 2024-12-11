@@ -1,0 +1,146 @@
+---
+- name: Setup Node Exporter User and Group
+  block:
+    - name: Create Node Exporter group
+      ansible.builtin.group:
+        name: "{{ node_exporter.group }}"
+        state: present
+
+    - name: Create Node Exporter user
+      ansible.builtin.user:
+        name: "{{ node_exporter.user }}"
+        group: "{{ node_exporter.group }}"
+        shell: /bin/false
+        system: yes
+        create_home: no
+        state: present
+  tags: 
+  - 'node-exporter'
+  - 'setup'
+
+- name: Download and Install Node Exporter
+  block:
+    - name: Download Node Exporter binary
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter.version }}/node_exporter-{{ node_exporter.version }}.linux-amd64.tar.gz"
+        dest: "/tmp/node_exporter-{{ node_exporter.version }}.linux-amd64.tar.gz"
+        mode: '0644'
+
+    - name: Download SHA256SUMS
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter.version }}/sha256sums.txt"
+        dest: "/tmp/node_exporter-sha256sums.txt"
+        mode: '0644'
+
+    - name: Extract checksum for node_exporter binary
+      ansible.builtin.shell: |
+        grep "node_exporter-{{ node_exporter.version }}.linux-amd64.tar.gz" /tmp/node_exporter-sha256sums.txt > /tmp/node_exporter-checksum
+      changed_when: false
+
+    - name: Verify node_exporter binary checksum
+      ansible.builtin.shell: |
+        cd /tmp && sha256sum -c node_exporter-checksum
+      register: checksum_verify
+      failed_when: checksum_verify.rc != 0
+      changed_when: false
+
+    - name: Extract Node Exporter binary
+      ansible.builtin.unarchive:
+        src: "/tmp/node_exporter-{{ node_exporter.version }}.linux-amd64.tar.gz"
+        dest: /tmp
+        remote_src: yes
+
+    - name: Copy Node Exporter binary
+      ansible.builtin.copy:
+        src: "/tmp/node_exporter-{{ node_exporter.version }}.linux-amd64/node_exporter"
+        dest: "{{ node_exporter.install_dir }}/node_exporter"
+        mode: '0755'
+        remote_src: yes
+        owner: "{{ node_exporter.user }}"
+        group: "{{ node_exporter.group }}"
+
+    - name: Clean up temporary files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/node_exporter-{{ node_exporter.version }}.linux-amd64.tar.gz"
+        - "/tmp/node_exporter-{{ node_exporter.version }}.linux-amd64"
+        - "/tmp/node_exporter-sha256sums.txt"
+        - "/tmp/node_exporter-checksum"
+  tags: 
+  - 'node-exporter'
+  - 'setup'
+
+- name: Configure Node Exporter Service
+  block:
+    - name: Template Node Exporter systemd service
+      ansible.builtin.template:
+        src: node-exporter/node-exporter.service.j2
+        dest: /etc/systemd/system/node-exporter.service
+        mode: '0644'
+      notify: reload systemd
+
+    - name: Disable and stop Node Exporter service
+      ansible.builtin.systemd:
+        name: node-exporter
+        state: stopped
+        enabled: no
+        daemon_reload: yes
+      when: not node_exporter.enabled | bool
+
+  become: true
+  when: node_exporter.enabled | default(false) | bool
+  tags: 
+  - 'node-exporter'
+  - 'setup'
+
+- name: Configure AppArmor for Node Exporter
+  block:
+    - name: Template AppArmor profile for Node Exporter
+      ansible.builtin.template:
+        src: node-exporter/node-exporter.apparmor.j2
+        dest: /etc/apparmor.d/usr.local.bin.node_exporter
+        mode: '0644'
+      notify: reload apparmor
+
+    - name: Ensure AppArmor profile is enforced
+      ansible.builtin.command: aa-enforce usr.local.bin.node_exporter
+      changed_when: false
+      when: node_exporter.apparmor.enforce | bool
+
+  become: true
+  when: 
+    - node_exporter.enabled | default(false) | bool
+    - node_exporter.apparmor.enabled | default(false) | bool
+  tags: 
+  - 'node-exporter'
+  - 'setup'
+
+- name: Wait for Node Exporter metrics endpoint to be available
+  ansible.builtin.uri:
+    url: "http://localhost:{{ node_exporter.port }}/metrics"
+    method: GET
+    status_code: 200
+  register: metrics_check
+  until: metrics_check.status == 200
+  retries: 12
+  delay: 5
+  tags: 
+  - 'node-exporter'
+  - 'setup'
+  - 'restart'
+
+- name: Install Prometheus rules
+  ansible.builtin.copy:
+    src: "templates/node-exporter/prometheus.rules.yaml"
+    dest: "{{ prometheus.config_dir }}/rules.d/node-exporter.rules.yaml"
+    mode: '0644'
+    owner: "{{ prometheus.user }}"
+    group: "{{ prometheus.group }}"
+  register: prometheus_rules
+  notify: reload prometheus
+  tags: 
+  - 'node-exporter'
+  - 'setup'
+  - 'restart'

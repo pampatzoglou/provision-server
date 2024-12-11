@@ -1,0 +1,35 @@
+#include <tunables/global>
+
+profile promtail flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  # Binary
+  {{ promtail.install_dir | default('/usr/local/bin') }}/promtail mr,
+
+  # Configuration
+  {{ promtail.config_dir | default('/etc/promtail') }}/** r,
+
+  # Data directory
+  {{ promtail.data_dir | default('/var/lib/promtail') }}/** rw,
+  {{ promtail.positions_dir | default('/var/lib/promtail/positions') }}/** rw,
+
+  # Allow network access for sending logs
+  network tcp,
+  network udp,
+
+  # Log files - allow reading all logs
+  /var/log/** r,
+  /var/log/promtail/** rw,
+
+  # PID file
+  /run/promtail.pid rw,
+
+  # Allow reading journal
+  /run/systemd/journal/socket rw,
+  /run/log/journal/** r,
+
+  # Allow reading container logs
+  /var/lib/docker/containers/**/*.log r,
+}

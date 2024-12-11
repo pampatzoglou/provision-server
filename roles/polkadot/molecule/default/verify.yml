@@ -1,0 +1,24 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Check if polkadot binary exists
+      stat:
+        path: /usr/local/bin/polkadot
+      register: polkadot_binary
+
+    - name: Verify polkadot binary exists
+      assert:
+        that: polkadot_binary.stat.exists
+        fail_msg: "Polkadot binary not found"
+
+    - name: Check service configuration
+      stat:
+        path: /etc/systemd/system/polkadot.service
+      register: service_file
+
+    - name: Verify service configuration exists
+      assert:
+        that: service_file.stat.exists
+        fail_msg: "Service file not found"

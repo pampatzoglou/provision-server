@@ -1,0 +1,96 @@
+---
+# Backup and Restore Tasks
+
+- name: Ensure backup dependencies
+  package:
+    name:
+      - lz4
+      - zstd
+      - awscli
+      - gpg
+    state: present
+
+- name: Create backup directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0750'
+    owner: "{{ binary_owner }}"
+    group: "{{ binary_group }}"
+  loop:
+    - "{{ backup_config.storage.local_path }}"
+    - "{{ backup_config.storage.local_path }}/chain_data"
+    - "{{ backup_config.storage.local_path }}/keys"
+    - "{{ backup_config.storage.local_path }}/config"
+
+- name: Install backup scripts
+  template:
+    src: "{{ item }}.sh.j2"
+    dest: "{{ binary_base_dir }}/{{ item }}.sh"
+    mode: '0750'
+    owner: "{{ binary_owner }}"
+    group: "{{ binary_group }}"
+  loop:
+    - backup_chain_data
+    - backup_keys
+    - backup_config
+    - restore_chain_data
+    - restore_keys
+    - restore_config
+
+- name: Configure backup cron jobs
+  cron:
+    name: "Backup {{ item.key }}"
+    job: "{{ binary_base_dir }}/backup_{{ item.key }}.sh"
+    minute: "{{ item.value.split(' ')[0] }}"
+    hour: "{{ item.value.split(' ')[1] }}"
+    day: "{{ item.value.split(' ')[2] }}"
+    month: "{{ item.value.split(' ')[3] }}"
+    weekday: "{{ item.value.split(' ')[4] }}"
+    user: "{{ binary_owner }}"
+  loop: "{{ backup_config.schedule | dict2items }}"
+  when: backup_config.enabled | bool
+
+- name: Configure backup rotation
+  template:
+    src: backup.logrotate.j2
+    dest: /etc/logrotate.d/polkadot-backup
+    mode: '0644'
+
+- name: Create restore point file
+  copy:
+    content: |
+      # Polkadot Validator Restore Points
+      # Format: TIMESTAMP|TYPE|STATUS|PATH
+      # Example: 2023-10-20T02:00:00Z|chain_data|success|/var/backups/polkadot/chain_data/backup_20231020.tar.lz4
+    dest: "{{ backup_config.storage.local_path }}/restore_points.log"
+    mode: '0640'
+    owner: "{{ binary_owner }}"
+    group: "{{ binary_group }}"
+    force: no
+
+# Restore tasks (these are typically run manually with specific parameters)
+- name: Restore from backup
+  block:
+    - name: Stop Polkadot service
+      service:
+        name: polkadot
+        state: stopped
+      when: restore.stop_service | default(true)
+
+    - name: Restore selected backup
+      command: "{{ binary_base_dir }}/restore_{{ restore.type }}.sh {{ restore.backup_file }}"
+      args:
+        creates: "{{ restore.backup_file }}.restored"
+      register: restore_result
+
+    - name: Start Polkadot service
+      service:
+        name: polkadot
+        state: started
+      when: restore.stop_service | default(true)
+
+    - name: Verify restore
+      include_tasks: health_check.yaml
+      when: restore.verify_health | default(true)
+  when: restore is defined

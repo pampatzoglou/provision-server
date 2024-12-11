@@ -1,0 +1,53 @@
+[Unit]
+Description=Polkadot Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ polkadot.user }}
+Group={{ polkadot.group }}
+Environment="RUST_BACKTRACE=1"
+Environment="RUST_LOG=info"
+Environment="RUST_LOG_JSON=true"
+ExecStart=/usr/local/bin/polkadot \
+    --validator \
+    --name "{{ inventory_hostname }}" \
+    --public-addr "/ip4/{{ public_ip.json.ip }}/tcp/{{ polkadot.ports.p2p }}" \
+{% if polkadot.prometheus.enabled %}    --prometheus-external \
+    --prometheus-port {{ polkadot.ports.prometheus }} \
+{% endif %}{% if polkadot.rpc.enabled %}    --rpc-cors {{ polkadot.rpc.cors }} \
+    --rpc-methods={{ polkadot.rpc.methods }} \
+    --rpc-port {{ polkadot.ports.rpc }}{% endif %} \
+    --base-path {{ polkadot.base_path }} \
+    --log json
+Restart=always
+RestartSec=10
+LimitNOFILE=10000
+WorkingDirectory={{ polkadot.base_path }}
+StateDirectory=polkadot
+LogsDirectory=polkadot
+RuntimeDirectory=polkadot
+MemoryHigh=7500M
+MemoryMax=8000M
+
+# Security
+PrivateTmp=true
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ polkadot.base_path }} /var/run/polkadot /var/log/polkadot /home/polkadot/.local/share/polkadot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+PrivateDevices=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+AmbientCapabilities=CAP_SYS_EXEC
+CapabilityBoundingSet=CAP_SYS_EXEC
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+{% if prometheus.rules.custom is defined and prometheus.rules.custom | length > 0 %}
+groups:
+  - name: custom_rules
+    rules:
+      {% for rule in prometheus.rules.custom %}
+      - alert: {{ rule.name }}
+        expr: {{ rule.expr }}
+        for: {{ rule.for | default('5m') }}
+        labels:
+          severity: {{ rule.severity | default('warning') }}
+          {% if rule.labels is defined %}
+          {% for label_key, label_value in rule.labels.items() %}
+          {{ label_key }}: {{ label_value }}
+          {% endfor %}
+          {% endif %}
+        annotations:
+          summary: "{{ rule.summary }}"
+          description: "{{ rule.description }}"
+      {% endfor %}
+{% endif %}

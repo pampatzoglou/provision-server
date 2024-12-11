@@ -1,0 +1,104 @@
+#!/bin/bash
+
+# Resource monitoring script
+# Managed by Ansible - DO NOT EDIT MANUALLY
+
+LOG_FILE="{{ grafana_agent.data_dir }}/monitoring/resources.log"
+ALERT_FILE="{{ grafana_agent.data_dir }}/monitoring/alerts.log"
+
+# Function to log messages
+log_message() {
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ")|$1|$2" >> "$LOG_FILE"
+}
+
+# Function to send alerts
+send_alert() {
+    local severity=$1
+    local message=$2
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ")|$severity|$message" >> "$ALERT_FILE"
+    
+    {% if monitoring.notification.slack.enabled %}
+    # Send Slack notification
+    if [ -x "$(command -v curl)" ]; then
+        curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"[$severity] $message\"}" \
+            "{{ monitoring.notification.slack.webhook_url }}"
+    fi
+    {% endif %}
+
+    {% if monitoring.notification.email.enabled %}
+    # Send email notification
+    if [ -x "$(command -v mail)" ]; then
+        echo "$message" | mail -s "[$severity] System Alert" \
+            {% for recipient in monitoring.notification.email.recipients %}
+            "{{ recipient }}"{% if not loop.last %} {% endif %}
+            {% endfor %}
+    fi
+    {% endif %}
+}
+
+# Check CPU usage
+check_cpu() {
+    local cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d. -f1)
+    log_message "CPU" "$cpu_usage%"
+    
+    if [ "$cpu_usage" -gt {{ monitoring.thresholds.cpu_usage }} ]; then
+        send_alert "WARNING" "High CPU usage: ${cpu_usage}%"
+    fi
+}
+
+# Check memory usage
+check_memory() {
+    local memory_usage=$(free | grep Mem | awk '{print ($3/$2 * 100)}' | cut -d. -f1)
+    log_message "MEMORY" "$memory_usage%"
+    
+    if [ "$memory_usage" -gt {{ monitoring.thresholds.memory_usage }} ]; then
+        send_alert "WARNING" "High memory usage: ${memory_usage}%"
+    fi
+}
+
+# Check disk usage
+check_disk() {
+    local disk_usage=$(df {{ grafana_agent.data_dir }} | tail -1 | awk '{print $5}' | cut -d% -f1)
+    log_message "DISK" "$disk_usage%"
+    
+    if [ "$disk_usage" -gt {{ monitoring.thresholds.disk_usage }} ]; then
+        send_alert "WARNING" "High disk usage: ${disk_usage}%"
+    fi
+}
+
+# Check network bandwidth
+check_network() {
+    local network_usage=$(nethogs -t -c 1 2>/dev/null | awk '{sum += $2} END {print sum}')
+    log_message "NETWORK" "${network_usage:-0}MB/s"
+    
+    if [ "${network_usage:-0}" -gt {{ monitoring.thresholds.network_bandwidth }} ]; then
+        send_alert "WARNING" "High network usage: ${network_usage}MB/s"
+    fi
+}
+
+# Check disk I/O
+check_io() {
+    local io_usage=$(iostat -x 1 2 | tail -n 2 | head -n 1 | awk '{print $14}')
+    log_message "IO" "${io_usage}%"
+    
+    if [ "${io_usage%.*}" -gt {{ monitoring.thresholds.disk_iops }} ]; then
+        send_alert "WARNING" "High disk I/O: ${io_usage} IOPS"
+    fi
+}
+
+# Main monitoring loop
+main() {
+    # Create log directory if it doesn't exist
+    mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$ALERT_FILE")"
+    
+    # Run checks
+    check_cpu
+    check_memory
+    check_disk
+    check_network
+    check_io
+}
+
+# Run main function
+main

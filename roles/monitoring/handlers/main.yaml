@@ -1,0 +1,60 @@
+---
+# handlers file for admin
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+  when: not ansible_connection == 'docker'
+
+- name: restart node-exporter
+  systemd:
+    name: node-exporter
+    state: restarted
+    daemon_reload: yes
+  when: node_exporter.enabled | bool and not ansible_connection == 'docker'
+
+- name: restart promtail
+  systemd:
+    name: promtail
+    state: restarted
+    daemon_reload: yes
+  when: promtail.enabled | bool and not ansible_connection == 'docker'
+
+- name: restart teleport
+  systemd:
+    name: teleport
+    state: restarted
+    daemon_reload: yes
+  when: not ansible_connection == 'docker'
+
+- name: restart sshd
+  systemd:
+    name: sshd
+    state: restarted
+    daemon_reload: yes
+  when: not ansible_connection == 'docker'
+
+- name: restart fail2ban
+  systemd:
+    name: fail2ban
+    state: restarted
+  become: true
+  when: not ansible_connection == 'docker'
+
+- name: restart prometheus
+  ansible.builtin.systemd:
+    name: prometheus
+    state: restarted
+    enabled: true
+
+- name: reload prometheus
+  uri:
+    url: http://localhost:9090/-/reload
+    method: POST
+    status_code: 200
+
+- name: reload alertmanager
+  uri:
+    url: http://localhost:9093/-/reload
+    method: POST
+    status_code: 200

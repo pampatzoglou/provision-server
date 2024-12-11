@@ -1,0 +1,29 @@
+---
+- name: Deploy Polkadot Validator
+  hosts: localhost
+  become: true
+  gather_facts: true
+
+  # pre_tasks:
+  # - name: Update apt cache (Debian)
+  #   apt:
+  #     update_cache: yes
+  #     cache_valid_time: 3600
+  #   tags: always
+  #   when: ansible_os_family == "Debian"
+
+  # - name: Update dnf cache (RedHat)
+  #   dnf:
+  #     update_cache: yes
+  #     cache_valid_time: 3600
+  #   tags: always
+  #   when: ansible_os_family == "RedHat"
+
+  roles:
+    - role: access
+      tags: ['security', 'hardening', 'access', 'ssh', 'firewall', 'teleport']
+    - role: monitoring
+      tags: ['monitoring', 'metrics']
+    # - role: polkadot
+    #   tags: ['polkadot']
+

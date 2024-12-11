@@ -1,0 +1,36 @@
+#include <tunables/global>
+
+profile node-exporter flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+
+  # Binary
+  {{ node_exporter.install_dir | default('/usr/local/bin') }}/node_exporter mr,
+
+  # Allow network access for serving metrics
+  network tcp,
+  network udp,
+
+  # System monitoring capabilities
+  capability sys_ptrace,
+  capability dac_read_search,
+  capability syslog,
+
+  # Proc filesystem access for metrics
+  /proc/** r,
+  /sys/** r,
+
+  # Log files
+  /var/log/node_exporter/** rw,
+
+  # PID file
+  /run/node-exporter.pid rw,
+
+  # Allow reading systemd data for systemd collector
+  /run/systemd/** r,
+
+  # Allow reading filesystem data
+  / r,
+  /**/ r,
+  /var/lib/node_exporter/** rw,
+}

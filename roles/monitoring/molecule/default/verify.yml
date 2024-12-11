@@ -1,0 +1,77 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check if required packages are installed
+      package:
+        name: "{{ item }}"
+        state: present
+      register: pkg_check
+      failed_when: pkg_check.failed
+      loop:
+        - monit
+        - ufw
+        - gpg
+
+    - name: Verify services are running
+      service:
+        name: "{{ item }}"
+        state: started
+      register: svc_check
+      failed_when: svc_check.failed
+      loop:
+        - monit
+        - teleport
+        - promtail
+        - grafana-agent
+        - node_exporter
+
+    - name: Check if UFW is enabled and configured
+      command: ufw status
+      register: ufw_check
+      changed_when: false
+      failed_when: "'Status: active' not in ufw_check.stdout"
+
+    - name: Verify required ports are open
+      wait_for:
+        port: "{{ item }}"
+        timeout: 1
+      loop:
+        - 22    # SSH
+        - 3022  # Teleport SSH
+        - 9100  # Node Exporter
+        - 9080  # Promtail
+
+    - name: Check if binaries exist and are executable
+      stat:
+        path: "{{ item }}"
+      register: binary_check
+      failed_when: not binary_check.stat.exists or not binary_check.stat.executable
+      loop:
+        - /usr/local/bin/teleport
+        - /usr/local/bin/promtail
+        - /usr/local/bin/node_exporter
+        - /usr/local/bin/grafana-agent
+
+    - name: Verify configuration files exist
+      stat:
+        path: "{{ item }}"
+      register: config_check
+      failed_when: not config_check.stat.exists
+      loop:
+        - /etc/teleport/teleport.yaml
+        - /etc/promtail/config.yaml
+        - /etc/grafana-agent/agent.yaml
+
+    - name: Check if system users exist
+      command: id {{ item }}
+      register: user_check
+      changed_when: false
+      failed_when: user_check.rc != 0
+      loop:
+        - teleport
+        - promtail
+        - grafana-agent

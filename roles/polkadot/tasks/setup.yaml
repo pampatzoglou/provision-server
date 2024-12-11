@@ -1,0 +1,212 @@
+---
+# Setup tasks for polkadot role
+
+- block:
+    - name: Create polkadot group
+      group:
+        name: "{{ polkadot.group | default('polkadot') }}"
+        system: yes
+        state: present
+
+    - name: Create polkadot user
+      user:
+        name: "{{ polkadot.user | default('polkadot') }}"
+        group: "{{ polkadot.group | default('polkadot') }}"
+        system: yes
+        shell: /sbin/nologin
+        create_home: yes
+        home: /home/polkadot
+        state: present
+
+    - name: Create required directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ polkadot.user }}"
+        group: "{{ polkadot.group }}"
+        mode: '0755'
+      loop:
+        - "{{ polkadot.base_path }}"
+        - /var/run/polkadot
+        - /var/log/polkadot
+        - /home/polkadot
+        - /home/polkadot/.local
+        - /home/polkadot/.local/share
+        - /home/polkadot/.local/share/polkadot
+        - "{{ polkadot.base_path }}/chains/polkadot/network"
+
+    - name: Check if node key exists
+      stat:
+        path: "{{ polkadot.base_path }}/chains/polkadot/network/secret_ed25519"
+      register: node_key_file
+
+    - name: Write predefined node key
+      copy:
+        content: "{{ polkadot.node_key }}"
+        dest: "{{ polkadot.base_path }}/chains/polkadot/network/secret_ed25519"
+        owner: "{{ polkadot.user }}"
+        group: "{{ polkadot.group }}"
+        mode: '0600'
+      when: polkadot.node_key | length > 0
+      notify: restart polkadot
+
+    - name: Generate node key if not exists
+      command: 
+        cmd: polkadot key generate-node-key --base-path {{ polkadot.base_path }}
+      become: true
+      become_user: "{{ polkadot.user }}"
+      when: 
+        - not node_key_file.stat.exists
+        - polkadot.node_key | length == 0
+      notify: restart polkadot
+
+    - name: Get public IP address
+      uri:
+        url: https://api.ipify.org?format=json
+        return_content: yes
+      register: public_ip
+      tags: ['setup', 'network']
+
+    - name: Template systemd service file
+      template:
+        src: polkadot.service.j2
+        dest: /etc/systemd/system/polkadot.service
+        mode: '0644'
+      notify: restart polkadot
+      when: not ansible_connection == 'docker'
+
+    - name: Template configuration file
+      template:
+        src: polkadot.config.json.j2
+        dest: /data/polkadot/config.json
+        owner: "{{ polkadot.user | default('polkadot') }}"
+        group: "{{ polkadot.group | default('polkadot') }}"
+        mode: '0644'
+      notify: restart polkadot
+
+    - name: Manage polkadot service
+      systemd:
+        name: polkadot
+        state: "{{ polkadot_service_state }}"
+        enabled: "{{ polkadot_service_enabled }}"
+        daemon_reload: yes
+      when: not ansible_connection == 'docker'
+
+    - name: Restart polkadot service
+      meta: flush_handlers
+  tags: ['setup', 'user']
+
+- block:
+    - name: Check for existing binaries
+      stat:
+        path: "{{ item.link }}"
+      loop: "{{ polkadot_binaries }}"
+      register: binary_checks
+
+    - name: Create temporary download directory
+      file:
+        path: "{{ download_temp_dir }}"
+        state: directory
+        mode: '0755'
+      when: binary_checks.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+
+    - name: Create versioned binary directory
+      file:
+        path: "{{ binary_base_dir }}/{{ polkadot_version }}"
+        state: directory
+        mode: '0755'
+      become: true
+      when: binary_checks.results | selectattr('stat.exists', 'equalto', false) | list | length > 0
+
+    - name: Download Polkadot binaries
+      get_url:
+        url: "{{ polkadot_base_url }}/polkadot-{{ polkadot_version }}/{{ item.item.name }}"
+        dest: "{{ binary_base_dir }}/{{ polkadot_version }}/{{ item.item.name }}"
+        mode: '0755'
+      loop: "{{ binary_checks.results }}"
+      when: not item.stat.exists
+      become: true
+
+    - name: Download SHA256SUMS
+      ansible.builtin.get_url:
+        url: "https://github.com/paritytech/polkadot-sdk/releases/download/polkadot-{{ polkadot_version }}-5/polkadot.sha256"
+        dest: "/tmp/polkadot.sha256"
+        mode: '0644'
+
+    - name: Verify Polkadot binary checksum
+      ansible.builtin.shell: |
+        cd /tmp
+        sha256sum --check --ignore-missing polkadot.sha256
+      changed_when: false
+
+    - name: Create binary symlinks
+      file:
+        src: "{{ binary_base_dir }}/{{ polkadot_version }}/{{ item.item.name }}"
+        dest: "{{ item.item.link }}"
+        state: link
+        force: yes
+      loop: "{{ binary_checks.results }}"
+      when: not item.stat.exists
+      become: true
+  tags: ['setup', 'binary']
+
+- name: Configure firewall rules
+  block:
+    - name: Include UFW tasks
+      include_tasks: ufw.yaml
+      when: firewall.type == 'ufw'
+
+    - name: Include FirewallD tasks
+      include_tasks: firewalld.yaml
+      when: firewall.type == 'firewalld'
+  when: firewall.enabled
+  tags: ['setup', 'firewall']
+
+- block:
+    - name: Template AppArmor profile
+      template:
+        src: polkadot.apparmor.j2
+        dest: /etc/apparmor.d/usr.bin.polkadot
+        mode: '0644'
+      when: apparmor.enabled | default(false) | bool and
+            apparmor.profiles.polkadot.enabled | default(false) | bool
+      notify: reload apparmor
+
+    - name: Set AppArmor profile enforcement
+      command: aa-enforce usr.bin.polkadot
+      when: apparmor.enabled | default(false) | bool and
+            apparmor.profiles.polkadot.enabled | default(false) | bool and
+            apparmor.profiles.polkadot.enforce | default(false) | bool
+      notify: reload apparmor
+  tags: ['setup', 'security', 'apparmor']
+
+- name: Check node health and performance
+  block:
+    - name: Wait for node to start (30s)
+      wait_for:
+        timeout: 30
+
+    - name: Check Prometheus metrics endpoint
+      uri:
+        url: "http://localhost:{{ polkadot.ports.prometheus }}/metrics"
+        return_content: yes
+      register: metrics
+      failed_when: false
+      changed_when: false
+
+    - name: Check RPC endpoint
+      uri:
+        url: "http://localhost:{{ polkadot.ports.rpc }}"
+        return_content: yes
+      register: rpc
+      failed_when: false
+      changed_when: false
+
+- name: Install Prometheus rules
+  ansible.builtin.copy:
+    src: "templates/prometheus.rules.yaml"
+    dest: "{{ prometheus.config_dir }}/rules.d/polkadot-validator.rules.yaml"
+    mode: '0644'
+    owner: "{{ prometheus.user }}"
+    group: "{{ prometheus.group }}"
+  notify: reload prometheus

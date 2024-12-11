@@ -1,0 +1,123 @@
+---
+# Teleport Configuration
+teleport:
+  enabled: true
+  version: "13.3.2"
+  user: "teleport"
+  group: "teleport"
+  install_dir: "/usr/local/bin"
+  config_dir: "/etc/teleport"
+  data_dir: "/var/lib/teleport"
+  node_name: "{{ inventory_hostname }}"
+
+  # Authentication Service Configuration
+  auth:
+    enabled: true
+
+  # SSH Service Configuration
+  ssh_service:
+    enabled: true
+    commands:
+      - name: hostname
+        command: [hostname]
+        period: "1m0s"
+      - name: uptime
+        command: [uptime, -p]
+        period: "1m0s"
+
+  # Proxy Service Configuration
+  proxy:
+    enabled: true
+
+  # Application Service Configuration
+  app_service:
+    enabled: true
+    apps:
+      monitoring:
+        - name: prometheus
+          uri: "http://localhost:9090"
+          labels:
+            type: monitoring
+        - name: alertmanager
+          uri: "http://localhost:9093"
+          labels:
+            type: monitoring
+      validators:
+        - name: polkadot
+          ports:
+            metrics: 9615
+            rpc: 9944
+          labels:
+            type: validator
+
+# Firewall Configuration
+firewall:
+  type: "{{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' if ansible_os_family == 'RedHat' else 'none' }}"
+  enabled: true
+  default_incoming_policy: deny
+  default_outgoing_policy: allow
+  rules:
+    - port: 22
+      proto: tcp
+      rule: allow
+    - port: 3022
+      proto: tcp
+      rule: allow
+    - port: 3080
+      proto: tcp
+      rule: allow
+
+# UFW-specific configuration (Debian-based systems)
+ufw:
+  enabled: "{{ firewall.enabled and firewall.type == 'ufw' }}"
+  default_incoming_policy: "{{ firewall.default_incoming_policy }}"
+  default_outgoing_policy: "{{ firewall.default_outgoing_policy }}"
+  rules: "{{ firewall.rules }}"
+
+# FirewallD-specific configuration (RedHat-based systems)
+firewalld:
+  enabled: "{{ firewall.enabled and firewall.type == 'firewalld' }}"
+  default_zone: public
+  rules: "{{ firewall.rules }}"
+
+# AppArmor Configuration
+apparmor:
+  enabled: false
+  active: false  # Master switch for AppArmor
+  profiles:
+    teleport:
+      enabled: true
+      enforce: true
+    fail2ban:
+      enabled: true
+      enforce: true
+
+# Hardening Configurations
+hardening:
+  shared_memory:
+    enabled: true
+    mount_options: 
+      - noexec
+      - nosuid
+      - nodev
+  
+  fail2ban:
+    enabled: false
+    ssh:
+      max_retry: 3
+      ban_time: 3600  # 1 hour
+      find_time: 600  # 10 minutes
+    services:
+      - name: sshd
+        enabled: true
+      - name: ssh
+        enabled: true
+    apparmor:
+      enabled: "{{ apparmor.enabled and apparmor.profiles.fail2ban.enabled }}"
+      enforce: "{{ apparmor.profiles.fail2ban.enforce }}"
+
+# Binary Signatures
+signatures:
+  teleport:
+    key_url: "https://deb.releases.teleport.dev/teleport-pubkey.asc"
+    key_id: "14F9 5DA9 DE82 1DFF F4B8 0B61 D0E8 5A5E 8ED5 CDAA"

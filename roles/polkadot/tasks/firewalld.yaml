@@ -1,0 +1,37 @@
+---
+# FirewallD tasks for Polkadot
+- name: Configure FirewallD rules for Polkadot
+  block:
+    - name: Open Polkadot P2P port
+      firewalld:
+        port: '30333/tcp'
+        zone: "{{ firewalld.default_zone }}"
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    - name: Open Polkadot RPC port
+      firewalld:
+        port: '9933/tcp'
+        zone: "{{ firewalld.default_zone }}"
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    - name: Open Polkadot WS port
+      firewalld:
+        port: '9944/tcp'
+        zone: "{{ firewalld.default_zone }}"
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    - name: Open Polkadot Prometheus port
+      firewalld:
+        port: '9615/tcp'
+        zone: "{{ firewalld.default_zone }}"
+        permanent: yes
+        state: enabled
+        immediate: yes
+  when: firewall.type == 'firewalld' and firewall.enabled
+  tags: ['setup', 'firewall']

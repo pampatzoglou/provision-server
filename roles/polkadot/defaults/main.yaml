@@ -1,0 +1,343 @@
+---
+# defaults file for polkadot
+# Polkadot version (using the stable release format)
+polkadot_version: "stable2409-2"
+
+# Base URL for downloads
+polkadot_base_url: "https://github.com/paritytech/polkadot-sdk/releases/download"
+
+# Base directory for versioned binaries
+binary_base_dir: "/usr/local/lib/polkadot"
+
+# Data directory
+data_dir: "/data/polkadot"
+
+# Binary names and paths
+polkadot_binaries:
+  - name: "polkadot"
+    link: "/usr/local/bin/polkadot"
+  - name: "polkadot-execute-worker"
+    link: "/usr/local/bin/polkadot-execute-worker"
+  - name: "polkadot-prepare-worker"
+    link: "/usr/local/bin/polkadot-prepare-worker"
+
+# Directory for temporary downloads
+download_temp_dir: "/tmp/polkadot_binaries"
+
+# Number of previous versions to keep (0 means keep all)
+keep_previous_versions: 2
+
+# Whether to clean up all old versions after successful installation
+cleanup_old_versions: false
+
+# Time to wait for service checks before cleanup (in seconds)
+cleanup_wait_time: 300
+
+# Binary verification settings
+verify_binary_hash: true
+binary_hash_cache_dir: "/var/cache/polkadot/hashes"
+
+# Health check configuration
+health_checks:
+  enabled: true
+  max_retries: 3
+  retry_interval: 60
+  timeout: 300  # 5 minutes total timeout
+  
+  # Process checks
+  process_checks:
+    - name: "Polkadot Validator Process"
+      command: "pgrep -f 'polkadot.*--validator'"
+      expected_status: 0
+      severity: critical
+
+  # Port checks
+  port_checks:
+    - name: "P2P Port"
+      port: 30333
+      protocol: tcp
+      severity: critical
+    - name: "RPC Port"
+      port: 9933
+      protocol: tcp
+      severity: high
+    - name: "WebSocket Port"
+      port: 9944
+      protocol: tcp
+      severity: high
+    - name: "Prometheus Port"
+      port: 9615
+      protocol: tcp
+      severity: low
+
+  # RPC Health Checks
+  rpc_checks:
+    - name: "System Health"
+      endpoint: "http://localhost:9933"
+      method: "system_health"
+      expected_response:
+        is_syncing: false
+        should_have_peers: true
+      severity: critical
+
+    - name: "Chain Head"
+      endpoint: "http://localhost:9933"
+      method: "chain_getHead"
+      expected_response:
+        not_null: true
+      severity: high
+
+  # Blockchain Specific Checks
+  blockchain_checks:
+    - name: "Block Production"
+      method: "check_block_production"
+      min_blocks_per_hour: 240  # Expect ~1 block every 15 seconds
+      max_missed_blocks: 10
+      severity: critical
+
+    - name: "Peer Connectivity"
+      min_peer_count: 3
+      max_peer_count: 50
+      severity: high
+
+  # Notification Configuration
+  notifications:
+    enabled: true
+    channels:
+      - type: "email"
+        recipients: 
+          - "admin@example.com"
+      - type: "slack"
+        webhook_url: "{{ slack_webhook_url | default('') }}"
+    
+    severity_thresholds:
+      critical: true
+      high: true
+      low: false
+
+# Firewall Configuration
+firewall:
+  type: "{{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' if ansible_os_family == 'RedHat' else 'none' }}"
+  enabled: true
+  default_incoming_policy: deny
+  default_outgoing_policy: allow
+  rules:
+    - port: 30333
+      proto: tcp
+      rule: allow
+    - port: 9933
+      proto: tcp
+      rule: allow
+    - port: 9944
+      proto: tcp
+      rule: allow
+    - port: 9615
+      proto: tcp
+      rule: allow
+
+# UFW-specific configuration (Debian-based systems)
+ufw:
+  enabled: "{{ firewall.enabled and firewall.type == 'ufw' }}"
+  default_incoming_policy: "{{ firewall.default_incoming_policy }}"
+  default_outgoing_policy: "{{ firewall.default_outgoing_policy }}"
+  rules: "{{ firewall.rules }}"
+
+# FirewallD-specific configuration (RedHat-based systems)
+firewalld:
+  enabled: "{{ firewall.enabled and firewall.type == 'firewalld' }}"
+  default_zone: public
+  rules: "{{ firewall.rules }}"
+
+# Backup configuration
+backup:
+  enabled: true
+  directory: "/var/backup/polkadot/binaries"
+  retention_days: 7
+  compress: true
+  exclude_patterns:
+    - "*.tmp"
+    - "*.old"
+
+# Logging configuration
+logging:
+  enabled: true
+  file: "/var/log/polkadot/binary_updates.log"
+  level: "INFO"
+  max_size: "100M"
+  rotate: true
+  keep: 5
+
+# Pre/Post installation hooks
+hooks:
+  pre_install:
+    - name: "backup_db"
+      enabled: true
+      command: "/usr/local/bin/backup_polkadot_db.sh"
+      timeout: 3600
+    - name: "stop_service"
+      enabled: true
+      command: "systemctl stop polkadot"
+      timeout: 300
+  post_install:
+    - name: "start_service"
+      enabled: true
+      command: "systemctl start polkadot"
+      timeout: 300
+    - name: "notify_team"
+      enabled: false
+      command: "/usr/local/bin/notify_slack.sh"
+      timeout: 60
+
+# AppArmor Configuration
+apparmor:
+  enabled: false  # Master switch for AppArmor profiles
+  profiles:
+    polkadot:
+      enabled: true
+      enforce: false  # false for complain mode, true for enforce mode
+    polkadot_execute_worker:
+      enabled: true
+      enforce: false
+    polkadot_prepare_worker:
+      enabled: true
+      enforce: false
+
+# Service configuration
+polkadot_service_enabled: true   # Set to false to disable the service
+polkadot_service_state: "started" # Can be: started, stopped, restarted
+
+# Resource management
+resource_limits:
+  disk_space_min: "10G"
+  memory_min: "16G"
+  check_enabled: true
+  monitoring:
+    disk_warning_threshold: "80"
+    memory_warning_threshold: "90"
+
+# Security settings
+security:
+  verify_checksum: true
+  verify_signature: true
+  required_permissions: "0755"
+  binary_owner: "polkadot"
+  binary_group: "polkadot"
+
+# Binary configuration
+binary:
+  verify_signature: true
+  required_permissions: "0755"
+  binary_owner: "polkadot"
+  binary_group: "polkadot"
+
+# Backup Configuration
+backup_config:
+  enabled: true
+  # Types of backups to perform
+  types:
+    - chain_data  # Blockchain data
+    - keys        # Validator keys
+    - config      # Configuration files
+  # Backup schedule
+  schedule:
+    chain_data: "0 2 * * *"  # Daily at 2 AM
+    keys: "0 3 * * 0"        # Weekly on Sunday at 3 AM
+    config: "0 4 1 * *"      # Monthly on 1st at 4 AM
+  # Retention policy
+  retention:
+    chain_data: 7    # days
+    keys: 30         # days
+    config: 90       # days
+  # Backup storage
+  storage:
+    local_path: "/var/backups/polkadot"
+    remote:
+      enabled: true
+      type: "s3"  # s3, sftp, or nfs
+      path: "s3://my-validator-backup"
+  # Compression settings
+  compression:
+    enabled: true
+    algorithm: "lz4"  # lz4, zstd, or gzip
+    level: 3
+  # Encryption settings
+  encryption:
+    enabled: true
+    algorithm: "aes-256-gcm"
+
+# Node Configuration
+polkadot:
+  user: polkadot
+  group: polkadot
+  version: "1.6.0"
+  node_key: ""  # Optional: Set this to use a predefined node key
+  base_path: /data/polkadot
+  ports:
+    p2p: 30333
+    rpc: 9944
+    prometheus: 9615
+  rpc:
+    enabled: true
+    methods: safe
+    cors: all
+  prometheus:
+    enabled: true
+    external: true
+
+# Lifecycle Synchronization Configuration
+lifecycle:
+  sync:
+    # Allowed sync types: 'warp', 'fast', 'full'
+    # - warp: Fastest sync method, downloads only recent chain state
+    # - fast: Balanced sync method with moderate download time
+    # - full: Most comprehensive sync, downloads entire blockchain history
+    type: warp
+    enabled: false
+    snapshots:
+      enabled: false
+      kusama:
+        paritydb: http://snapshot.stakeworld.io/paritydb-ksmcc3.lz4
+        rocksdb: http://snapshot.stakeworld.io/rocksdb-ksmcc3.lz4
+      polkadot:
+        paritydb: http://snapshot.stakeworld.io/paritydb-polkadot.lz4
+        rocksdb: http://snapshot.stakeworld.io/rocksdb-polkadot.lz4 
+
+# Upgrade and Rollback Configuration
+upgrade:
+  # Upgrade strategy (rolling, blue-green, canary)
+  strategy: rolling
+  
+  # Maximum allowed downtime during upgrade (in seconds)
+  max_downtime: 300
+  
+  # Rollback configuration
+  rollback:
+    enabled: true
+    # Number of previous versions to keep for potential rollback
+    keep_versions: 3
+    
+    # Conditions that trigger automatic rollback
+    auto_rollback:
+      # Rollback if health checks fail after upgrade
+      on_health_check_failure: true
+      
+      # Rollback if block production stops
+      on_block_production_halt: true
+      
+      # Maximum time to wait for successful upgrade before considering rollback
+      max_upgrade_validation_time: 600  # 10 minutes
+    
+    # Notification preferences for rollback events
+    notifications:
+      enabled: true
+      channels:
+        - type: email
+          recipients: 
+            - admin@example.com
+        - type: slack
+          webhook_url: "{{ slack_webhook_url | default('') }}"
+
+prometheus:
+  user: "prometheus"
+  group: "prometheus"
+  config_dir: "/etc/prometheus"

@@ -1,0 +1,58 @@
+---
+# tasks file for polkadot
+
+- name: Run setup tasks
+  include_tasks: setup.yaml
+  when: not (lifecycle.sync.enabled | default(false) | bool or
+            lifecycle.upgrade.enabled | default(false) | bool or
+            lifecycle.maintenance.enabled | default(false) | bool)
+  tags: ['setup']
+
+# - name: Run sync tasks
+#   include_tasks: sync.yaml
+#   when: lifecycle.sync.enabled | default(false) | bool
+#   tags: ['lifecycle', 'sync']
+
+# - name: Run upgrade tasks
+#   include_tasks: upgrade.yaml
+#   when: lifecycle.upgrade.enabled | default(false) | bool
+#   tags: ['lifecycle', 'upgrade']
+
+# - name: Run maintenance tasks
+#   include_tasks: maintenance.yaml
+#   when: lifecycle.maintenance.enabled | default(false) | bool
+#   tags: ['lifecycle', 'maintenance']
+
+# - name: Run health checks
+#   include_tasks: health_check.yaml
+#   tags: ['health', 'monitoring']
+
+# - name: Configure backups
+#   include_tasks: backup.yaml
+#   tags: ['backup', 'setup']
+#   when: backup_config.enabled | default(true) | bool
+
+# - name: Check versions and health
+#   block:
+#     - name: Check Polkadot version
+#       command: polkadot --version
+#       register: polkadot_version_output
+#       changed_when: false
+
+#     - name: Check Polkadot Execute Worker version
+#       command: polkadot-execute-worker --version
+#       register: execute_worker_version_output
+#       changed_when: false
+
+#     - name: Check Polkadot Prepare Worker version
+#       command: polkadot-prepare-worker --version
+#       register: prepare_worker_version_output
+#       changed_when: false
+
+#     - name: Print versions
+#       debug:
+#         msg: 
+#           - "Polkadot Version: {{ polkadot_version_output.stdout }}"
+#           - "Execute Worker Version: {{ execute_worker_version_output.stdout }}"
+#           - "Prepare Worker Version: {{ prepare_worker_version_output.stdout }}"
+#   tags: ['health', 'version']

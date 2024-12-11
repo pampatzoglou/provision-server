@@ -1,0 +1,15 @@
+---
+# handlers file for polkadot
+
+- name: restart polkadot
+  systemd:
+    name: polkadot
+    state: restarted
+    daemon_reload: yes
+  when: polkadot.enabled | default(false) | bool and not ansible_connection == 'docker'
+
+- name: reload prometheus
+  uri:
+    url: http://localhost:9090/-/reload
+    method: POST
+    status_code: 200

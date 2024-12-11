@@ -1,0 +1,30 @@
+---
+# UFW tasks for Debian-based systems
+- name: Install UFW
+  apt:
+    name: ufw
+    state: present
+  when: firewall.type == 'ufw'
+
+- name: Set UFW default policies
+  ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+    state: enabled
+  loop:
+    - { direction: incoming, policy: "{{ ufw.default_incoming_policy }}" }
+    - { direction: outgoing, policy: "{{ ufw.default_outgoing_policy }}" }
+  when: firewall.type == 'ufw' and firewall.enabled
+
+- name: Configure UFW rules
+  ufw:
+    rule: "{{ item.rule }}"
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop: "{{ ufw.rules }}"
+  when: firewall.type == 'ufw' and firewall.enabled
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+  when: firewall.type == 'ufw' and firewall.enabled

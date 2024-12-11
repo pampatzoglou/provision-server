@@ -1,0 +1,38 @@
+---
+# Rollback Notification Tasks
+
+- name: Prepare Rollback Notification
+  block:
+    - name: Send Email Notification
+      mail:
+        subject: "Polkadot Validator Upgrade Rollback"
+        body: |
+          Upgrade to version {{ polkadot_version }} failed and rolled back.
+          
+          Rollback Details:
+          - Original Version: {{ polkadot_version }}
+          - Rollback Reason: {{ upgrade_health_check.overall_health_status | default('Unknown Failure') }}
+          - Timestamp: {{ ansible_date_time.iso8601 }}
+        to: "{{ upgrade.rollback.notifications.channels | selectattr('type', 'equalto', 'email') | map(attribute='recipients') | first | first }}"
+      when: 
+        - upgrade.rollback.notifications.enabled
+        - upgrade.rollback.notifications.channels | selectattr('type', 'equalto', 'email') | list | length > 0
+
+    - name: Send Slack Notification
+      uri:
+        url: "{{ upgrade.rollback.notifications.channels | selectattr('type', 'equalto', 'slack') | map(attribute='webhook_url') | first }}"
+        method: POST
+        body_format: json
+        body:
+          text: |
+            *🚨 Polkadot Validator Upgrade Rollback 🚨*
+            
+            Upgrade to version `{{ polkadot_version }}` failed and rolled back.
+            
+            *Rollback Details:*
+            • Original Version: `{{ polkadot_version }}`
+            • Rollback Reason: `{{ upgrade_health_check.overall_health_status | default('Unknown Failure') }}`
+            • Timestamp: `{{ ansible_date_time.iso8601 }}`
+      when: 
+        - upgrade.rollback.notifications.enabled
+        - upgrade.rollback.notifications.channels | selectattr('type', 'equalto', 'slack') | list | length > 0

@@ -1,0 +1,26 @@
+[DEFAULT]
+# Ban IPs for one hour by default
+bantime = {{ hardening.fail2ban.ssh.ban_time | default(3600) }}
+
+# Override /etc/fail2ban/jail.conf
+findtime = {{ hardening.fail2ban.ssh.find_time | default(600) }}
+maxretry = {{ hardening.fail2ban.ssh.max_retry | default(3) }}
+
+# Email settings (optional)
+# destemail = root@localhost
+# sender = fail2ban@localhost
+# sendername = Fail2Ban
+
+[sshd]
+enabled = {{ hardening.fail2ban.services | selectattr('name', 'equalto', 'sshd') | map(attribute='enabled') | first | default(true) }}
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = {{ hardening.fail2ban.ssh.max_retry | default(3) }}
+
+[ssh]
+enabled = {{ hardening.fail2ban.services | selectattr('name', 'equalto', 'ssh') | map(attribute='enabled') | first | default(true) }}
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = {{ hardening.fail2ban.ssh.max_retry | default(3) }}

@@ -1,0 +1,25 @@
+[Unit]
+Description=Prometheus Monitoring
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User={{ prometheus.user }}
+Group={{ prometheus.group }}
+ExecStart=/usr/local/bin/prometheus \
+--config.file={{ prometheus.config_dir }}/prometheus.yaml \
+--storage.tsdb.path={{ prometheus.data_dir }} \
+--storage.tsdb.retention.time=1h \
+--query.max-concurrency=5 \
+--enable-feature=auto-reload-config \
+--enable-feature=extra-scrape-metrics \
+--web.enable-remote-write-receiver \
+--enable-feature=remote-write-receiver \
+--enable-feature=exemplar-storage \
+--web.enable-admin-api
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

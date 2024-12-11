@@ -1,0 +1,22 @@
+---
+plugin: amazon.aws.aws_ec2
+aws_access_key: '{{ aws_access_key }}'
+aws_secret_key: '{{ aws_secret_key }}'
+regions:
+  - us-east-1  # Add more regions as needed
+keyed_groups:
+  - key: tags.Environment
+    prefix: env
+  - key: tags.Role
+    prefix: role
+  - key: instance_type
+    prefix: type
+filters:
+  instance-state-name: running
+compose:
+  ansible_host: public_ip_address
+hostnames:
+  - tag:Name
+  - dns-name
+  - private-dns-name
+  - private-ip-address

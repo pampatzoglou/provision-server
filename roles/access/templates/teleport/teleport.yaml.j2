@@ -1,0 +1,59 @@
+version: v3
+teleport:
+  nodename: {{ teleport.node_name }}
+  data_dir: {{ teleport.data_dir }}
+  log:
+    output: stderr
+    severity: INFO
+    format:
+      output: text
+
+auth_service:
+  enabled: {{ teleport.auth.enabled | string | lower }}
+  cluster_name: {{ teleport.node_name }}
+  listen_addr: 0.0.0.0:3025
+  proxy_listener_mode: multiplex
+
+ssh_service:
+  enabled: {{ teleport.ssh_service.enabled | string | lower }}
+  listen_addr: 0.0.0.0:3022
+  commands:
+{% for cmd in teleport.ssh_service.commands %}
+    - name: {{ cmd.name }}
+      command: {{ cmd.command | to_json }}
+      period: {{ cmd.period }}
+{% endfor %}
+
+proxy_service:
+  enabled: {{ teleport.proxy.enabled | string | lower }}
+  listen_addr: 0.0.0.0:3023
+  web_listen_addr: 0.0.0.0:3080
+  tunnel_listen_addr: 0.0.0.0:3024
+
+app_service:
+  enabled: {{ teleport.app_service.enabled | string | lower }}
+  apps:
+{% for app in teleport.app_service.apps.monitoring %}
+    - name: {{ app.name }}
+      uri: "{{ app.uri }}"
+      public_addr: "{{ app.name }}.{{ teleport.node_name }}"
+      labels:
+        type: "{{ app.labels.type }}"
+      insecure_skip_verify: true
+{% endfor %}
+
+{% for validator in teleport.app_service.apps.validators %}
+    - name: "{{ validator.name }}-metrics"
+      uri: "http://localhost:{{ validator.ports.metrics }}"
+      public_addr: "metrics-{{ validator.name }}.{{ teleport.node_name }}"
+      labels:
+        type: "{{ validator.labels.type }}"
+      insecure_skip_verify: true
+
+    - name: "{{ validator.name }}-rpc"
+      uri: "http://localhost:{{ validator.ports.rpc }}"
+      public_addr: "rpc-{{ validator.name }}.{{ teleport.node_name }}"
+      labels:
+        type: "{{ validator.labels.type }}"
+      insecure_skip_verify: true
+{% endfor %}

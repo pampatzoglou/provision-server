@@ -1,0 +1,54 @@
+#include <tunables/global>
+
+profile teleport flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+  #include <abstractions/ssl_certs>
+
+  # Binary
+  {{ teleport.install_dir | default('/usr/local/bin') }}/teleport mr,
+  {{ teleport.install_dir | default('/usr/local/bin') }}/tctl mr,
+  {{ teleport.install_dir | default('/usr/local/bin') }}/tsh mr,
+
+  # Configuration
+  {{ teleport.config_dir | default('/etc/teleport') }}/** r,
+
+  # Data directory
+  {{ teleport.data_dir | default('/var/lib/teleport') }}/** rwk,
+
+  # Allow network access
+  network tcp,
+  network udp,
+
+  # System capabilities
+  capability net_bind_service,
+  capability setgid,
+  capability setuid,
+  capability sys_chroot,
+  capability kill,
+
+  # SSH access
+  /dev/pts/* rw,
+  
+  # PAM authentication
+  /etc/pam.d/* r,
+  /etc/security/** r,
+  
+  # Log files
+  /var/log/teleport/** rw,
+
+  # PID file
+  /run/teleport.pid rw,
+
+  # Allow reading user information
+  /etc/passwd r,
+  /etc/group r,
+
+  # Allow shell access for SSH sessions
+  /bin/bash ix,
+  /bin/sh ix,
+
+  # Allow access to user home directories for SSH
+  /home/** rw,
+}

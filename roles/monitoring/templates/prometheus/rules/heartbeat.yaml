@@ -1,0 +1,11 @@
+groups:
+  - name: heartbeats
+    rules:
+      - alert: Heartbeat
+        expr: vector(1)
+        labels:
+          severity: none
+          type: heartbeat
+        annotations:
+          summary: "Instance {{ $labels.instance }} heartbeat"
+          description: "Heartbeat signal from {{ $labels.instance }}"

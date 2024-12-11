@@ -1,0 +1,30 @@
+---
+- name: Prepare
+  hosts: all
+  tasks:
+  - name: Install system dependencies
+    apt:
+      name: 
+        - ufw
+        - systemd
+        - dbus
+        - python3-apt
+      state: present
+      update_cache: yes
+    when: ansible_os_family == "Debian"
+
+  - name: Create systemd directories
+    file:
+      path: "{{ item }}"
+      state: directory
+      mode: '0755'
+    loop:
+      - /run/systemd/system
+      - /etc/systemd/system
+
+  - name: Start systemd
+    command: /lib/systemd/systemd --system
+    async: 0
+    poll: 0
+    ignore_errors: yes
+

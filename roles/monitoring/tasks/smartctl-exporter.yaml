@@ -1,0 +1,100 @@
+---
+- name: Setup Smartctl User and Directories
+  block:
+    - name: Ensure Smartctl user and group exist
+      ansible.builtin.group:
+        name: "{{ smartctl.group }}"
+        state: present
+
+    - name: Create Smartctl user
+      ansible.builtin.user:
+        name: "{{ smartctl.user }}"
+        group: "{{ smartctl.group }}"
+        system: true
+        shell: /sbin/nologin
+        create_home: false
+        state: present
+
+- name: Install dependencies
+  ansible.builtin.package:
+    name:
+      - wget
+      - tar
+      - gzip
+      - smartmontools
+    state: present
+
+- name: Install Smartctl Binary
+  block:
+    - name: Download SHA256SUMS
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl.version }}/sha256sums.txt"
+        dest: "/tmp/sha256sums.txt"
+        mode: '0644'
+
+    - name: Download Smartctl Exporter
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl.version }}/smartctl_exporter-{{ smartctl.version }}.linux-amd64.tar.gz"
+        dest: "/tmp/smartctl_exporter.tar.gz"
+        mode: '0644'
+        checksum: "sha256:{{ lookup('url', 'https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl.version }}/sha256sums.txt') | regex_search('([a-f0-9]+)\\s+smartctl_exporter-{{ smartctl.version }}.linux-amd64.tar.gz', '\\1') | first }}"
+    - name: Extract Smartctl Exporter
+      ansible.builtin.unarchive:
+        src: "/tmp/smartctl_exporter.tar.gz"
+        dest: "/tmp"
+        remote_src: true
+
+    - name: Install Smartctl Exporter binary
+      ansible.builtin.copy:
+        src: "/tmp/smartctl_exporter-{{ smartctl.version }}.linux-amd64/smartctl_exporter"
+        dest: "{{ smartctl.install_dir }}/smartctl_exporter"
+        mode: '0755'
+        owner: "{{ smartctl.user }}"
+        group: "{{ smartctl.group }}"
+      register: smartctl_binary
+
+    - name: Install Smartctl configuration directory
+      ansible.builtin.file:
+        path: "{{ smartctl.config_dir }}"
+        state: directory
+        owner: "{{ smartctl.user }}"
+        group: "{{ smartctl.group }}"
+        mode: '0755'
+
+- name: Configure Smartctl Exporter Service
+  block:
+    - name: Template Smartctl Exporter systemd service
+      ansible.builtin.template:
+        src: templates/smartctl-exporter/smartctl-exporter.service.j2
+        dest: /etc/systemd/system/smartctl-exporter.service
+        mode: '0644'
+      register: smartctl_service
+
+    - name: Start and Enable Smartctl Exporter
+      ansible.builtin.systemd:
+        name: smartctl-exporter
+        state: restarted
+        enabled: true
+        daemon_reload: yes
+      when: 
+        - ansible_connection != 'docker'
+        - smartctl_binary.changed or smartctl_service.changed
+
+- name: Wait for Smartctl Exporter metrics
+  ansible.builtin.uri:
+    url: "http://localhost:9633/metrics"
+    method: GET
+    status_code: 200
+  register: metrics_check
+  until: metrics_check.status == 200
+  retries: 12
+  delay: 5
+
+- name: Install Prometheus rules
+  ansible.builtin.copy:
+    src: "templates/smartctl-exporter/prometheus.rules.yaml"
+    dest: "{{ prometheus.config_dir }}/rules.d/smartctl-exporter.rules.yaml"
+    mode: '0644'
+    owner: "{{ prometheus.user }}"
+    group: "{{ prometheus.group }}"
+  notify: reload prometheus

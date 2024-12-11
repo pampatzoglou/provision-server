@@ -1,0 +1,6 @@
+---
+# Maintenance phase tasks for Polkadot
+- name: Perform routine maintenance
+  command: "polkadot --maintain"
+  when: lifecycle.maintenance.enabled | default(false) | bool
+  tags: ['lifecycle', 'maintenance']

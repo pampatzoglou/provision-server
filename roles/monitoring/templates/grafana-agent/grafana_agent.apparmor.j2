@@ -1,0 +1,35 @@
+#include <tunables/global>
+
+profile grafana-agent flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  # Binary
+  {{ grafana_agent.install_dir | default('/usr/local/bin') }}/grafana-agent mr,
+
+  # Configuration
+  {{ grafana_agent.config_dir | default('/etc/grafana-agent') }}/** r,
+
+  # Data directory
+  {{ grafana_agent.data_dir | default('/var/lib/grafana-agent') }}/** rw,
+
+  # Allow network access for metrics collection and sending
+  network tcp,
+  network udp,
+
+  # System monitoring capabilities
+  capability sys_ptrace,
+  capability dac_read_search,
+  capability syslog,
+
+  # Proc filesystem access for metrics
+  /proc/** r,
+  /sys/** r,
+
+  # Log files
+  /var/log/grafana-agent/** rw,
+
+  # PID file
+  /run/grafana-agent.pid rw,
+}

@@ -1,0 +1,30 @@
+---
+# tasks file for admin
+- name: Include security tasks
+  block:
+    - name: Include system hardening
+      include_tasks: hardening.yaml
+      tags: ['security', 'hardening']
+
+    - name: Include UFW firewall
+      include_tasks: ufw.yaml
+      when:
+      - firewall.enabled | default(false) | bool
+      - firewall.type == 'ufw'
+      tags: ['security', 'firewall']
+
+    - name: Include FirewallD firewall
+      include_tasks: firewalld.yaml
+      when: 
+      - firewall.enabled | default(false) | bool
+      - firewall.type == 'firewalld'
+      tags: ['security', 'firewall']
+
+    - name: Include SSH hardening
+      include_tasks: ssh_hardening.yaml
+      tags: ['security', 'ssh']
+
+    - name: Include Teleport setup
+      include_tasks: teleport.yaml
+      when: teleport is defined and teleport.enabled | default(false) | bool
+      tags: ['security', 'ssh', 'teleport']

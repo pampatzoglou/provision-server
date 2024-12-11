@@ -1,0 +1,51 @@
+#include <tunables/global>
+
+profile polkadot flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  # Binary
+  {{ binary_base_dir }}/{{ polkadot_version }}/polkadot mr,
+  /usr/local/bin/polkadot mr,
+
+  # Configuration and data
+  /etc/polkadot/** r,
+  /var/lib/polkadot/** rwk,
+
+  # Allow network access for p2p and RPC
+  network tcp,
+  network udp,
+
+  # System capabilities
+  capability sys_resource,
+  capability dac_read_search,
+  capability dac_override,
+
+  # Log files
+  /var/log/polkadot/** rw,
+
+  # PID file
+  /run/polkadot.pid rw,
+
+  # Allow reading system info
+  /proc/sys/net/core/somaxconn r,
+  /proc/sys/net/ipv4/tcp_fastopen r,
+  
+  # Allow access to entropy sources
+  /dev/random r,
+  /dev/urandom r,
+
+  # Allow memory locking
+  capability ipc_lock,
+
+  # Temp directory access
+  /tmp/** rw,
+
+  # Allow reading system time
+  /sys/class/rtc/rtc0/time r,
+
+  # Allow reading CPU info
+  /proc/cpuinfo r,
+  /sys/devices/system/cpu/** r,
+}

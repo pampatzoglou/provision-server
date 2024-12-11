@@ -1,0 +1,122 @@
+- name: Setup Alertmanager User and Directories
+  block:
+    - name: Ensure Alertmanager user and group exist
+      ansible.builtin.group:
+        name: "{{ alertmanager.group }}"
+        state: present
+
+    - name: Create Alertmanager user
+      ansible.builtin.user:
+        name: "{{ alertmanager.user }}"
+        group: "{{ alertmanager.group }}"
+        system: true
+        shell: /sbin/nologin
+        create_home: false
+        state: present
+
+- name: Install dependencies
+  ansible.builtin.package:
+    name:
+      - wget
+      - tar
+      - gzip
+    state: present
+
+
+- name: Install Alertmanager Binary
+  block:
+    - name: Download Alertmanager
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager.version }}/alertmanager-{{ alertmanager.version }}.linux-amd64.tar.gz"
+        dest: "/tmp"
+
+    - name: Download SHA256SUMS
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager.version }}/SHA256SUMS"
+        dest: "/tmp/alertmanager-SHA256SUMS"
+        mode: '0644'
+
+    - name: Verify Alertmanager binary checksum
+      ansible.builtin.shell: |
+        cd /tmp
+        sha256sum --check --ignore-missing alertmanager-SHA256SUMS
+      changed_when: false
+
+    - name: Extract Alertmanager
+      ansible.builtin.unarchive:
+        src: "/tmp/alertmanager-{{ alertmanager.version }}.linux-amd64.tar.gz"
+        dest: "/tmp"
+        remote_src: true
+
+    - name: Install Alertmanager binaries
+      ansible.builtin.copy:
+        src: "/tmp/alertmanager-{{ alertmanager.version }}.linux-amd64/alertmanager"
+        dest: "/usr/local/bin/alertmanager"
+        mode: '0755'
+      register: alertmanager_binary
+
+    - name: Install Alertmanager configuration directory
+      ansible.builtin.file:
+        path: "{{ alertmanager.config_dir }}"
+        state: directory
+        owner: "{{ alertmanager.user }}"
+        group: "{{ alertmanager.group }}"
+        mode: '0755'
+
+- name: Configure Alertmanager Service
+  block:
+    - name: Install Alertmanager configuration and data directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ alertmanager.user }}"
+        group: "{{ alertmanager.group }}"
+        mode: '0755'
+        recurse: yes
+      loop:
+        - "{{ alertmanager.data_dir }}"
+        - "{{ alertmanager.config_dir }}"
+      register: alertmanager_config
+
+    - name: Template Alertmanager config file
+      template:
+        src: templates/alertmanager/alertmanager.yaml.j2
+        dest: "{{ alertmanager.config_dir }}/alertmanager.yaml"
+        mode: '0644'
+        owner: "{{ alertmanager.user }}"
+        group: "{{ alertmanager.group }}"
+      register: alertmanager_config
+
+    - name: Template Alertmanager systemd service
+      template:
+        src: templates/alertmanager/alertmanager.service.j2
+        dest: /etc/systemd/system/alertmanager.service
+        mode: '0644'
+      register: alertmanager_service
+
+    - name: Enable and start Alertmanager service
+      ansible.builtin.systemd:
+        name: alertmanager
+        state: started
+        enabled: true
+        daemon_reload: yes
+      when: ansible_connection != 'docker'
+
+- name: Restart alertmanager service on changes
+  ansible.builtin.systemd:
+    name: alertmanager
+    state: restarted
+  when: 
+    - ansible_connection != 'docker'
+    - alertmanager_config.changed or alertmanager_service.changed or alertmanager_binary.changed
+  ignore_errors: yes
+
+- name: Wait for Alertmanager web UI to become available
+  uri:
+    url: "http://localhost:9093/#/alerts"
+    method: GET
+    status_code: 200
+  register: alertmanager_result
+  until: alertmanager_result.status == 200
+  retries: 12
+  delay: 5

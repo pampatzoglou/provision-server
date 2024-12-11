@@ -1,0 +1,29 @@
+---
+plugin: community.digitalocean.digitalocean
+api_token: '{{ do_api_token }}'
+attributes:
+  - id
+  - name
+  - memory
+  - vcpus
+  - disk
+  - size
+  - image
+  - networks
+  - region
+  - tags
+keyed_groups:
+  - key: region.slug
+    prefix: region
+  - key: size.slug
+    prefix: size
+  - key: tags
+    prefix: tag
+  - key: image.distribution
+    prefix: distribution
+compose:
+  ansible_host: public_ipv4
+  ansible_port: 22
+  ansible_user: root
+filters:
+  - status == "active"
