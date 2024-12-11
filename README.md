@@ -6,39 +6,30 @@ This Ansible collection provides a comprehensive, secure, and automated solution
 ## Architecture
 
 ```mermaid
-graph LR
-    subgraph Access
-        H[Firewall]
-        I[SSH Hardening]
-        K[AppArmor MAC]
-        J[Teleport (agent)]
-    end
-
+graph RL
     subgraph External Services
         P[Prometheus]
         L[Loki]
         A[Alertmanager]
         TB[Teleport Bastion]
-        G --> |Metrics| P
-        G --> |Metrics| PL
-        G --> |Logs| L
+        P --> |Alerts| A
     end
-
     subgraph Monitoring
+        LG[Logs]
         N[Node Exporter]
         S[smartctl Exporter]
         G[Grafana Agent]
-        PL[Prometheus (local)]
-        AL[Alertmanager(local)]
-
-        N --> |Monitor| G
-        S --> |Monitor| G
+        PL[Prometheus local]
+        AL[Alertmanager local]
+        LG --> |Logs| G
+        N --> |Metrics| G
+        S --> |Metrics| G
         G --> |Metrics| PL
-        PG --> |Metrics| AL
-        G --> |Logs| P
-        G --> |Logs| L    
+        PL --> |Alerts| AL
+        G --> |Metrics| P
+        G --> |Logs| L
+        L --> |Alerts| A
     end
-
 ```
 
 ## Security and Hardening Features
