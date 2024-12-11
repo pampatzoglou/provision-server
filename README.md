@@ -3,98 +3,45 @@
 ```
 ## Overview
 
-This Ansible collection provides a comprehensive, secure, and automated solution for deploying and managing Polkadot validator nodes. Designed with a focus on security, observability, and reliability, the collection offers robust infrastructure-as-code capabilities.
+This Ansible collection provides a comprehensive, secure, and automated solution for deploying and managing servers with a focus on Polkadot validator nodes. Designed with a focus on security, observability, and reliability, the collection offers robust infrastructure-as-code capabilities.
 
-## New Features
-
-### Sync Type Validation
-- Restricted sync types to 'warp', 'fast', and 'full'
-- Validation added to ensure correct sync type usage
-
-### Upgrade and Rollback Mechanism
-- Comprehensive upgrade tasks with rollback strategy
-- Backup and restore capabilities with notification system
-
-### Monitoring and Backup Infrastructure
-- Resource monitoring moved to admin role
-- Flexible monitoring script with Slack and email notifications
-- Integration with Grafana Agent for metrics
 
 ## Architecture
 
 ```mermaid
 graph LR
-    subgraph Security
+    subgraph Access
         H[Firewall]
         I[SSH Hardening]
-        J[Binary Verify]
         K[AppArmor MAC]
-        L[Teleport Bastion]
+        J[Teleport (agent)]
     end
 
     subgraph External Services
-        E[Prometheus]
-        F[Loki]
-        G[Grafana]
-        E --> |Metrics| G
-        F --> |Logs| G
+        P[Prometheus]
+        L[Loki]
+        A[Alertmanager]
+        TB[Teleport Bastion]
+        G --> |Metrics| P
+        G --> |Metrics| PL
+        G --> |Logs| L
     end
 
-    subgraph Validator Node
-        A[Polkadot Validator Node]
-        B[Node Exporter]
-        C[Grafana Agent]
-        D[Promtail]
-        M[Monit] --> |Monitor| C
-        M --> |Monitor| B
-        M --> |Monitor| D
-        M --> |Monitor| A
+    subgraph Monitoring
+        N[Node Exporter]
+        S[smartctl Exporter]
+        G[Grafana Agent]
+        PL[Prometheus (local)]
+        AL[Alertmanager(local)]
+
+        N --> |Monitor| G
+        S --> |Monitor| G
+        G --> |Metrics| PL
+        PG --> |Metrics| AL
+        G --> |Logs| P
+        G --> |Logs| L    
     end
 
-    A --> |Metrics| C
-    B --> |Metrics| C
-    D --> |Logs| C
-    C --> |Metrics| E
-    C --> |Logs| F
-
-    H --> |Protect| A
-    I --> |Access| A
-    J --> |Validate| A
-    K --> |Secure| A
-    L --> |Access| A
-```
-
-## Services Interaction
-
-```mermaid
-graph LR
-    subgraph Validator Node
-        A[Polkadot Service]
-        B[Node Exporter]
-        C[Grafana Agent]
-        D[Promtail]
-        E[Monit] --> |Monitor| C
-        E --> |Monitor| B
-        E --> |Monitor| D
-        T[Teleport]
-    end
-
-    subgraph External Services
-        I[Prometheus]
-        J[Grafana]
-        K[Loki]
-        I --> |Metrics| J
-        K --> |Logs| J
-        M[Teleport Bastion]
-    end
-
-    A --> |Metrics| C
-    B --> |Metrics| C
-    D --> |Logs| C
-    C --> |Metrics| I
-    C --> |Logs| K
-
-    T --> |Access| M
 ```
 
 ## Security and Hardening Features
@@ -265,33 +212,6 @@ apparmor:
       enforce: true
 ```
 
-## Features
-
-### 🔒 Security
-
-- SSH hardening with best practices
-- Firewall configuration
-- Binary signature verification
-- Minimal privilege execution
-- Secure service configurations
-- AppArmor Mandatory Access Control
-- Service-specific security profiles
-
-### 🖥️ Monitoring
-
-- Grafana Agent integration
-- Monit service monitoring
-- Node Exporter system metrics
-- Local Prometheus and Alertmanager instances
-
-### 🚀 Validator Management
-
-- Automated Polkadot binary deployment
-- Systemd service management
-- Version control
-- Resource restriction
-- Health checks
-
 ## Roles
 
 ### Admin Role
@@ -300,6 +220,18 @@ apparmor:
 - Security hardening
 - Monitoring stack setup
 - User and group management
+
+### Access Role
+- **Author**: Pantelis Ampatzoglou  
+- **Description**: Comprehensive system administration role for Polkadot validator nodes, including security hardening, monitoring, and alerting capabilities.  
+- **License**: Apache-2.0  
+- **Minimum Ansible Version**: 2.9  
+
+### Monitoring Role
+- **Author**: Pantelis Ampatzoglou  
+- **Description**: Comprehensive system administration role for Polkadot validator nodes, including security hardening, monitoring, and alerting capabilities.  
+- **License**: Apache-2.0  
+- **Minimum Ansible Version**: 2.9  
 
 ### Polkadot Role
 
@@ -440,20 +372,6 @@ For detailed documentation on each role, please refer to:
 - [Monitoring Role Documentation](roles/monitoring/README.md)
 - [Polkadot Role Documentation](roles/polkadot/README.md)
 
-```
-
-```
-
-
-```
-
-```
-
-
 ## Contact
 
 Maintained by the Polkadot Validator Infrastructure Team
-
-```
-
-```
