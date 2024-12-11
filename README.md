@@ -6,13 +6,18 @@ This Ansible collection provides a comprehensive, secure, and automated solution
 ## Architecture
 
 ```mermaid
-graph RL
+graph LR
     subgraph External Services
         P[Prometheus]
         L[Loki]
         A[Alertmanager]
         TB[Teleport Bastion]
         P --> |Alerts| A
+    end
+    subgraph Access
+        T[Teleport agent]
+        T --> AL
+        T --> PL
     end
     subgraph Monitoring
         LG[Logs]
@@ -29,6 +34,10 @@ graph RL
         G --> |Metrics| P
         G --> |Logs| L
         L --> |Alerts| A
+    end
+    subgraph Workload
+        V[Validator]
+        T --> V
     end
 ```
 
