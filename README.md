@@ -1,6 +1,3 @@
-# provision-server
-
-```
 ## Overview
 
 This Ansible collection provides a comprehensive, secure, and automated solution for deploying and managing servers with a focus on Polkadot validator nodes. Designed with a focus on security, observability, and reliability, the collection offers robust infrastructure-as-code capabilities.
